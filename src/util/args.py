@@ -45,18 +45,6 @@ def parse_args(
         "--logs_path", type=str, default="logs", help="logs output directory",
     )
     parser.add_argument(
-        "--checkpoints_path",
-        type=str,
-        default="checkpoints",
-        help="checkpoints output directory",
-    )
-    parser.add_argument(
-        "--visual_path",
-        type=str,
-        default="visuals",
-        help="visualization output directory",
-    )
-    parser.add_argument(
         "--epochs",
         type=int,
         default=default_num_epochs,

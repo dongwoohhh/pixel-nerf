@@ -50,7 +50,20 @@ def extra_args(parser):
         default=None,
         help="Freeze encoder weights and only train MLP",
     )
+    parser.add_argument(
+        "--visual_path",
+        type=str,
+        default="visuals",
+        help="visualization output directory",
+    )
+    parser.add_argument(
+        "--checkpoints_path",
+        type=str,
+        default="checkpoints",
+        help="checkpoints output directory",
+    )
     return parser
+    
 
 
 args, conf = util.args.parse_args(extra_args, training=True, default_ray_batch_size=128)

@@ -33,7 +33,8 @@ def get_split_dataset(dataset_type, datadir, want_split="all", training=True, **
             flags["list_prefix"] = "gen_"
         elif dataset_type == "dvr_dtu":
             # DTU dataset
-            flags["list_prefix"] = "new_"
+            #flags["list_prefix"] = "new_"
+            flags["list_prefix"] = "SRF_"
             if training:
                 flags["max_imgs"] = 49
             flags["sub_format"] = "dtu"
