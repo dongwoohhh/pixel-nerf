@@ -60,6 +60,18 @@ def parse_args(
     parser.add_argument(
         "--ray_batch_size", "-R", type=int, default=default_ray_batch_size, help="Ray batch size"
     )
+    parser.add_argument(
+        "--checkpoints_path",
+        type=str,
+        default="checkpoints",
+        help="checkpoints output directory",
+    )
+    parser.add_argument(
+        "--visual_path",
+        type=str,
+        default="visuals",
+        help="visualization output directory",
+    )
     if callback is not None:
         parser = callback(parser)
     args = parser.parse_args()
