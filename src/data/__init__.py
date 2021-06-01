@@ -7,7 +7,7 @@ from .SRNDataset import SRNDataset
 from .data_util import ColorJitterDataset
 
 
-def get_split_dataset(dataset_type, datadir, want_split="all", training=True, **kwargs):
+def get_split_dataset(dataset_type, datadir, want_split="all", training=True, pointcloud=False, **kwargs):
     """
     Retrieved desired dataset class
     :param dataset_type dataset type name (srn|dvr|dvr_gen, etc)
@@ -33,14 +33,16 @@ def get_split_dataset(dataset_type, datadir, want_split="all", training=True, **
             flags["list_prefix"] = "gen_"
         elif dataset_type == "dvr_dtu":
             # DTU dataset
-            #flags["list_prefix"] = "new_"
-            flags["list_prefix"] = "SRF_"
+            flags["list_prefix"] = "new_"
+            #flags["list_prefix"] = "SRF_"
             if training:
                 flags["max_imgs"] = 49
             flags["sub_format"] = "dtu"
             flags["scale_focal"] = False
             flags["z_near"] = 0.1
             flags["z_far"] = 5.0
+            flags["pointcloud"] = pointcloud
+            flags['n_points'] = 100000
             # Apply color jitter during train
             train_aug = ColorJitterDataset
             train_aug_flags = {"extra_inherit_attrs": ["sub_format"]}

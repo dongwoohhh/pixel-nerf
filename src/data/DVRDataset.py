@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import glob
 import imageio
 import numpy as np
+import open3d as o3d
 import cv2
 from util import get_image_to_tensor_balanced, get_mask_to_tensor
 
@@ -26,6 +27,8 @@ class DVRDataset(torch.utils.data.Dataset):
         z_near=1.2,
         z_far=4.0,
         skip_step=None,
+        pointcloud=False,
+        n_points=0,
     ):
         """
         :param path dataset root path, contains metadata.yml
@@ -103,6 +106,9 @@ class DVRDataset(torch.utils.data.Dataset):
         self.z_far = z_far
         self.lindisp = False
 
+        self.pointcloud = pointcloud
+        self.n_points = n_points
+
     def __len__(self):
         return len(self.all_objs)
 
@@ -128,6 +134,15 @@ class DVRDataset(torch.utils.data.Dataset):
 
         cam_path = os.path.join(root_dir, "cameras.npz")
         all_cam = np.load(cam_path)
+
+        # Read pointcloud.
+        if self.pointcloud:
+            pcd_load = o3d.io.read_point_cloud(os.path.join(root_dir, 'points.ply'))
+            pcd_load = pcd_load.voxel_down_sample(voxel_size=1.0)
+            points = np.asarray(pcd_load.points)
+            np.random.shuffle(points)
+            points = points[:self.n_points, :]
+            points = torch.tensor(points)
 
         all_imgs = []
         all_poses = []
@@ -264,7 +279,9 @@ class DVRDataset(torch.utils.data.Dataset):
             "focal": focal,
             "images": all_imgs,
             "poses": all_poses,
+            "points": points,
         }
+
         if all_masks is not None:
             result["masks"] = all_masks
         if self.sub_format != "shapenet":
