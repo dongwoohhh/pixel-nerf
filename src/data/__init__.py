@@ -42,7 +42,7 @@ def get_split_dataset(dataset_type, datadir, want_split="all", training=True, po
             flags["z_near"] = 0.1
             flags["z_far"] = 5.0
             flags["pointcloud"] = pointcloud
-            flags['n_points'] = 100000
+            flags['n_points'] = 1000000#100000
             # Apply color jitter during train
             train_aug = ColorJitterDataset
             train_aug_flags = {"extra_inherit_attrs": ["sub_format"]}
