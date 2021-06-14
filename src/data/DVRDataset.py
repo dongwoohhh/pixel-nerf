@@ -134,17 +134,16 @@ class DVRDataset(torch.utils.data.Dataset):
 
         cam_path = os.path.join(root_dir, "cameras.npz")
         all_cam = np.load(cam_path)
-
+        """
         # Read pointcloud.
         if self.pointcloud:
             pcd_load = o3d.io.read_point_cloud(os.path.join(root_dir, 'points.ply'))
-            #pcd_load = pcd_load.voxel_down_sample(voxel_size=1.0)
+            pcd_load = pcd_load.voxel_down_sample(voxel_size=0.1)
             points = np.asarray(pcd_load.points)
 
-            #indices = np.random.permutation(points.shape[0])
-            colors = np.asarray(pcd_load.colors)
-            #points = points[indices[:self.n_points]]
-            #colors = colors[indices[:self.n_points]]
+            indices = np.random.permutation(points.shape[0])
+            points = points[indices[:self.n_points]]
+        """ 
 
         all_imgs = []
         all_poses = []
@@ -275,55 +274,13 @@ class DVRDataset(torch.utils.data.Dataset):
             if all_masks is not None:
                 all_masks = F.interpolate(all_masks, size=self.image_size, mode="area")
 
-
-        # Validate pointclould by camera warping.
-        K = np.eye(3)
-        K[0, 0] = focal[0]
-        K[1, 1] = focal[1]
-        K[0, 2] = c[0]
-        K[1, 2] = c[1]
-        
-        points[:, :2] = -points[:, :2]
-        points[:, :1] = -points[:, :1]
-        points[:, :0] = -points[:, :0]
-        """
-        points_tmp = points[:, 1]
-        points[:, 1] = points[:, 2]
-        points[:, 2] = points_tmp
-        """
-        #points[:, :0] = -points[:, :0]
-        #points = self._coord_trans_world @ points @ self._coord_trans_cam 
-        points -= norm_trans.T
-        points /= norm_scale.T
-        
-        points_hom = np.ones((points.shape[0], 4))
-        points_hom[:, :3] = points
-        
-        for i in range(49):
-            pose_i = all_poses[i]
-            
-            pose_i = np.linalg.inv(all_poses[i].numpy())
-            #print(pose_i)
-            xyz = np.matmul(K, np.matmul(pose_i, points_hom.T)[:3, :]).T
-            #xyz = np.matmul(K, np.matmul(np.eye(4), points_hom.T)[:3, :]).T
-            xy = xyz[:, :2] / xyz[:, 2:3]
-            xy = np.floor(xy).astype(np.int32)
-            
-            mask = np.where((xy[:, 0]>0) & (xy[:, 0]<400) & (xy[:, 1]>0) & (xy[:, 1]<300))
-            xy = xy[mask]
-            colors_i = colors[mask]
-            image_w = np.zeros((300, 400, 3), dtype=np.float32)
-            image_w[xy[:, 1], xy[:, 0], :] = colors_i * 255
-            cv2.imwrite('tmp_{}.png'.format(i), cv2.cvtColor(image_w, cv2.COLOR_RGB2BGR))
-
-        raise NotImplementedError
         result = {
             "path": root_dir,
             "img_id": index,
             "focal": focal,
             "images": all_imgs,
             "poses": all_poses,
-            "points": points,
+            #"points": points,
         }
 
         if all_masks is not None:

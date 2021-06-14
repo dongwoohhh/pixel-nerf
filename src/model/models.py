@@ -3,13 +3,17 @@ Main model implementation
 """
 import torch
 from .encoder import ImageEncoder
+from .transformer import RadianceTransformer
 from .code import PositionalEncoding
 from .model_util import make_encoder, make_mlp
 import torch.autograd.profiler as profiler
-from util import repeat_interleave
+import torch.nn.functional as F
+from util import repeat_interleave, batched_index_select_nd
 import os
 import os.path as osp
 import warnings
+
+from model import transformer
 
 
 class PixelNeRFNet(torch.nn.Module):
@@ -65,7 +69,7 @@ class PixelNeRFNet(torch.nn.Module):
             self.global_latent_size = self.global_encoder.latent_size
             d_latent += self.global_latent_size
 
-        d_out = 4
+        d_out = 1
 
         self.latent_size = self.encoder.latent_size
         self.mlp_coarse = make_mlp(conf["mlp_coarse"], d_in, d_latent, d_out=d_out)
@@ -83,8 +87,16 @@ class PixelNeRFNet(torch.nn.Module):
         # Principal point
         self.register_buffer("c", torch.empty(1, 2), persistent=False)
 
+        # Pose_ref
+        self.register_buffer("poses_ref", torch.empty(1, 3, 4), persistent=False)
         self.num_objs = 0
         self.num_views_per_obj = 1
+        
+         # Radiance Transformer
+        d_latent_transformer = 256
+        self.transformer = RadianceTransformer(d_q=3, d_k=d_latent+d_in,
+            n_dim=d_latent_transformer, n_head=4, n_layer=1)
+
 
     def encode(self, images, poses, focal, z_bounds=None, c=None):
         """
@@ -143,7 +155,7 @@ class PixelNeRFNet(torch.nn.Module):
         if self.use_global_encoder:
             self.global_encoder(images)
 
-    def forward(self, xyz, coarse=True, viewdirs=None, far=False):
+    def forward(self, xyz, index_target, coarse=True, viewdirs=None, compute_ref=True, far=False):
         """
         Predict (r, g, b, sigma) at world space points xyz.
         Please call encode first!
@@ -156,8 +168,36 @@ class PixelNeRFNet(torch.nn.Module):
         with profiler.record_function("model_inference"):
             SB, B, _ = xyz.shape
             NS = self.num_views_per_obj
-
+            NR = self.num_ref_views
             # Transform query points into the camera spaces of the input views
+            if compute_ref:
+                xyz_ref = repeat_interleave(xyz, NR)
+                xyz_rot_ref = torch.matmul(self.poses_ref[:, None, :3, :3], xyz_ref.unsqueeze(-1))[
+                    ..., 0
+                ]
+                xyz_ref = xyz_rot_ref + self.poses_ref[:, None, :3, 3]
+
+                uv_ref = -xyz_ref[:, :, :2] / xyz_ref[:, :, 2:]
+                uv_ref *= repeat_interleave(
+                    self.focal.unsqueeze(1), NR if self.focal.shape[0] > 1 else 1
+                )
+                uv_ref += repeat_interleave(
+                    self.c.unsqueeze(1), NR if self.c.shape[0] > 1 else 1
+                )
+                """
+                self.color_ref = self.index_ref(uv_ref)  # (SB * NR, 3, B)
+                """
+                #print(uv_ref)               
+                #print("color_ref.shape", self.color_ref.shape)
+                viewdirs_ref = viewdirs.reshape(SB, B, 3, 1)
+                viewdirs_ref = repeat_interleave(viewdirs_ref, NR) # (SB*NR, B, 3, 1)
+                viewdirs_ref = torch.matmul(
+                    self.poses_ref[:, None, :3, :3], viewdirs_ref
+                )
+                viewdirs_ref = viewdirs_ref.reshape(SB, NR, B, 3).transpose(1, 2)
+                viewdirs_ref = viewdirs_ref.reshape(SB*B, NR, 3)
+                #print("viewdirs_ref.shape", viewdirs_ref.shape)
+
             xyz = repeat_interleave(xyz, NS)  # (SB*NS, B, 3)
             xyz_rot = torch.matmul(self.poses[:, None, :3, :3], xyz.unsqueeze(-1))[
                 ..., 0
@@ -180,7 +220,6 @@ class PixelNeRFNet(torch.nn.Module):
                 if self.use_code and not self.use_code_viewdirs:
                     # Positional encoding (no viewdirs)
                     z_feature = self.code(z_feature)
-
                 if self.use_viewdirs:
                     # * Encode the view directions
                     assert viewdirs is not None
@@ -213,6 +252,12 @@ class PixelNeRFNet(torch.nn.Module):
                 latent = self.encoder.index(
                     uv, None, self.image_shape
                 )  # (SB * NS, latent, B)
+                latent_ref = latent
+                latent_ref = latent_ref.transpose(1, 2).reshape(SB, NS, B, self.latent_size)
+                latent_ref = latent_ref.transpose(1, 2).reshape(SB*B, NS, self.latent_size)
+                z_feature_ref = z_feature.reshape(SB, NS, B, -1)
+                z_feature_ref = z_feature_ref.transpose(1, 2).reshape(SB*B, NS, -1)
+                transformer_input = torch.cat((latent_ref, z_feature_ref), dim=-1)
 
                 if self.stop_encoder_grad:
                     latent = latent.detach()
@@ -257,13 +302,21 @@ class PixelNeRFNet(torch.nn.Module):
             # Interpret the output
             mlp_output = mlp_output.reshape(-1, B, self.d_out)
 
-            rgb = mlp_output[..., :3]
-            sigma = mlp_output[..., 3:4]
+            sigma = mlp_output
+            # Run Radiance Transformer network.
+            transformer_output = self.transformer(query=viewdirs_ref, key=transformer_input, value=transformer_input)
+            #print(index_target)
+            rgb_ref = transformer_output
+            
+            index_target = index_target.reshape(-1, 1)
+            rgb = batched_index_select_nd(transformer_output, index_target)[:, 0]
+            rgb = rgb.reshape(SB, B, -1)
 
-            output_list = [torch.sigmoid(rgb), torch.relu(sigma)]
-            output = torch.cat(output_list, dim=-1)
-            output = output.reshape(SB, B, -1)
-        return output
+            rgb_ray = torch.sigmoid(rgb)
+            sigma_ray = torch.relu(sigma)
+
+        return rgb_ray, sigma_ray, rgb_ref
+
 
     def load_weights(self, args, opt_init=False, strict=True, device=None):
         """
@@ -314,3 +367,40 @@ class PixelNeRFNet(torch.nn.Module):
             copyfile(ckpt_path, ckpt_backup_path)
         torch.save(self.state_dict(), ckpt_path)
         return self
+
+    
+    def encode_ref(self, poses):
+        self.num_ref_views = poses.size(1)
+        poses = poses.reshape(-1, 4, 4)
+        
+        rot = poses[:, :3, :3].transpose(1, 2)  # (NV, 3, 3)
+        trans = -torch.bmm(rot, poses[:, :3, 3:])  # (NV, 3, 1)
+        self.poses_ref = torch.cat((rot, trans), dim=-1)  # (NV, 3, 4)
+
+    """
+    def encode_ref(self, images, poses):
+        # Method only for DTU images.
+        self.num_ref_views = images.size(1)
+        images = images.reshape(-1, *images.shape[2:])
+        poses = poses.reshape(-1, 4, 4)
+
+        # Need index operation.
+        self.images_ref = images
+        rot = poses[:, :3, :3].transpose(1, 2)  # (NV, 3, 3)
+        trans = -torch.bmm(rot, poses[:, :3, 3:])  # (NV, 3, 1)
+        self.poses_ref = torch.cat((rot, trans), dim=-1)  # (NV, 3, 4)
+        # Re-use focal and c from source view encode function.
+    def index_ref(self, uv):
+        with profiler.record_function("ref_image_index"):
+            if uv.shape[0] == 1 and self.latent.shape[0] > 1:
+                uv = uv.expand(self.latent.shape[0], -1, -1)
+            uv = uv.unsqueeze(2)  # (B, N, 1, 2)
+
+            samples = F.grid_sample(
+                self.images_ref,
+                uv,
+                align_corners=True,mode='bilinear',
+                padding_mode='border'
+            )
+            return samples[:, :, :, 0]
+    """
