@@ -91,10 +91,12 @@ class PixelNeRFNet(torch.nn.Module):
         self.register_buffer("poses_ref", torch.empty(1, 3, 4), persistent=False)
         self.num_objs = 0
         self.num_views_per_obj = 1
-        
+
          # Radiance Transformer
         d_latent_transformer = 256
-        self.transformer = RadianceTransformer(d_q=3, d_k=d_latent+d_in,
+        self.transformer_coarse = RadianceTransformer(d_q=self.code.d_out, d_k=d_latent+d_in,
+            n_dim=d_latent_transformer, n_head=4, n_layer=1)
+        self.transformer_fine = RadianceTransformer(d_q=self.code.d_out, d_k=d_latent+d_in,
             n_dim=d_latent_transformer, n_head=4, n_layer=1)
 
 
@@ -195,9 +197,13 @@ class PixelNeRFNet(torch.nn.Module):
                     self.poses_ref[:, None, :3, :3], viewdirs_ref
                 )
                 viewdirs_ref = viewdirs_ref.reshape(SB, NR, B, 3).transpose(1, 2)
-                viewdirs_ref = viewdirs_ref.reshape(SB*B, NR, 3)
+                #viewdirs_ref = viewdirs_ref.reshape(SB*B, NR, 3)
+                viewdirs_ref = viewdirs_ref.reshape(-1, 3)
                 #print("viewdirs_ref.shape", viewdirs_ref.shape)
-
+                viewdirs_ref = self.code(viewdirs_ref)
+                viewdirs_ref = viewdirs_ref.reshape(SB*B, NR, -1)
+                #print("viewdirs_ref.shape", viewdirs_ref.shape)
+            
             xyz = repeat_interleave(xyz, NS)  # (SB*NS, B, 3)
             xyz_rot = torch.matmul(self.poses[:, None, :3, :3], xyz.unsqueeze(-1))[
                 ..., 0
@@ -304,8 +310,10 @@ class PixelNeRFNet(torch.nn.Module):
 
             sigma = mlp_output
             # Run Radiance Transformer network.
-            transformer_output = self.transformer(query=viewdirs_ref, key=transformer_input, value=transformer_input)
-            #print(index_target)
+            if coarse or self.mlp_fine is None:
+                transformer_output = self.transformer_coarse(query=viewdirs_ref, key=transformer_input, value=transformer_input)
+            else:
+                transformer_output = self.transformer_fine(query=viewdirs_ref, key=transformer_input, value=transformer_input)
             rgb_ref = transformer_output
             
             index_target = index_target.reshape(-1, 1)
