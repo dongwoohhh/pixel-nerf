@@ -194,6 +194,7 @@ class NeRFRenderer(torch.nn.Module):
             rgb_ray_all = []
             sigma_ray_all = []
             rgb_ref_all = []
+            uv_ref_all = []
             if sb > 0:
                 points = points.reshape(
                     sb, -1, 3
@@ -222,10 +223,11 @@ class NeRFRenderer(torch.nn.Module):
                     #output_ray, rgb_ref = model(pnts, indices, coarse=coarse, viewdirs=dirs)
                     #val_all.append(output_ray)
                     
-                    rgb_ray, sigma_ray, rgb_ref = model(pnts, indices, coarse=coarse, viewdirs=dirs)
+                    rgb_ray, sigma_ray, rgb_ref, uv_ref = model(pnts, indices, coarse=coarse, viewdirs=dirs)
                     rgb_ray_all.append(rgb_ray)
                     sigma_ray_all.append(sigma_ray)
                     rgb_ref_all.append(rgb_ref)
+                    uv_ref_all.append(uv_ref)
             else:
                 for pnts in split_points:
                     val_all.append(model(pnts, index_target, coarse=coarse))
@@ -233,16 +235,17 @@ class NeRFRenderer(torch.nn.Module):
             viewdirs = None
             indices = None
             # (B*K, 4) OR (SB, B'*K, 4)
-
-            rgb_ref = torch.cat(rgb_ref_all, dim=eval_batch_dim)
-            rgb_ref = rgb_ref.reshape(B, K, -1, 3)
-
-            
             rgbs = torch.cat(rgb_ray_all, dim=eval_batch_dim)
             sigmas = torch.cat(sigma_ray_all, dim=eval_batch_dim)
             
             rgbs = rgbs.reshape(B, K, -1)
             sigmas = sigmas.reshape(B, K)
+
+            rgb_ref = torch.cat(rgb_ref_all, dim=eval_batch_dim)
+            uv_ref = torch.cat(uv_ref_all, dim=eval_batch_dim)
+            
+            rgb_ref = rgb_ref.reshape(B, K, -1, 3)
+            uv_ref = uv_ref.reshape(B, K, -1, 2)
 
             if self.training and self.noise_std > 0.0:
                 sigmas = sigmas + torch.randn_like(sigmas) * self.noise_std
@@ -279,6 +282,7 @@ class NeRFRenderer(torch.nn.Module):
                 rgb_final,
                 depth_final,
                 rgb_ref,
+                uv_ref,
                 #mask_ref
             )
 
@@ -314,7 +318,7 @@ class NeRFRenderer(torch.nn.Module):
                     coarse_composite, superbatch_size, want_weights=want_weights,
                 ),
             )
-
+            
             if self.using_fine:
                 all_samps = [z_coarse]
                 if self.n_fine - self.n_fine_depth > 0:
@@ -339,14 +343,15 @@ class NeRFRenderer(torch.nn.Module):
     def _format_outputs(
         self, rendered_outputs, superbatch_size, want_weights=False,
     ):
-        weights, rgb, depth, rgb_ref = rendered_outputs #mask_ref
+        weights, rgb, depth, rgb_ref, uv_ref = rendered_outputs #mask_ref
         if superbatch_size > 0:
             rgb = rgb.reshape(superbatch_size, -1, 3)
             depth = depth.reshape(superbatch_size, -1)
             weights = weights.reshape(superbatch_size, -1, weights.shape[-1])
             rgb_ref = rgb_ref.reshape(superbatch_size, -1, rgb_ref.shape[-2] , 3)
+            uv_ref = uv_ref.reshape(superbatch_size, -1, rgb_ref.shape[-2], 2)
             #mask_ref = mask_ref.reshape(superbatch_size,)
-        ret_dict = DotMap(rgb=rgb, depth=depth, rgb_ref=rgb_ref)
+        ret_dict = DotMap(rgb=rgb, depth=depth, rgb_ref=rgb_ref, uv_ref=uv_ref)
         if want_weights:
             ret_dict.weights = weights
         return ret_dict

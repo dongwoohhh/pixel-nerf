@@ -93,11 +93,11 @@ class PixelNeRFNet(torch.nn.Module):
         self.num_views_per_obj = 1
 
          # Radiance Transformer
-        d_latent_transformer = 256
+        d_latent_transformer = 128
         self.transformer_coarse = RadianceTransformer(d_q=self.code.d_out, d_k=d_latent+d_in,
-            n_dim=d_latent_transformer, n_head=4, n_layer=1)
+            n_dim=d_latent_transformer, n_head=1, n_layer=1)
         self.transformer_fine = RadianceTransformer(d_q=self.code.d_out, d_k=d_latent+d_in,
-            n_dim=d_latent_transformer, n_head=4, n_layer=1)
+            n_dim=d_latent_transformer, n_head=1, n_layer=1)
 
 
     def encode(self, images, poses, focal, z_bounds=None, c=None):
@@ -186,23 +186,23 @@ class PixelNeRFNet(torch.nn.Module):
                 uv_ref += repeat_interleave(
                     self.c.unsqueeze(1), NR if self.c.shape[0] > 1 else 1
                 )
+                uv_ref = uv_ref.reshape(SB, NR, B, 2).transpose(1, 2)
+
                 """
                 self.color_ref = self.index_ref(uv_ref)  # (SB * NR, 3, B)
                 """
-                #print(uv_ref)               
-                #print("color_ref.shape", self.color_ref.shape)
+
                 viewdirs_ref = viewdirs.reshape(SB, B, 3, 1)
                 viewdirs_ref = repeat_interleave(viewdirs_ref, NR) # (SB*NR, B, 3, 1)
                 viewdirs_ref = torch.matmul(
                     self.poses_ref[:, None, :3, :3], viewdirs_ref
                 )
                 viewdirs_ref = viewdirs_ref.reshape(SB, NR, B, 3).transpose(1, 2)
-                #viewdirs_ref = viewdirs_ref.reshape(SB*B, NR, 3)
                 viewdirs_ref = viewdirs_ref.reshape(-1, 3)
-                #print("viewdirs_ref.shape", viewdirs_ref.shape)
-                viewdirs_ref = self.code(viewdirs_ref)
-                viewdirs_ref = viewdirs_ref.reshape(SB*B, NR, -1)
-                #print("viewdirs_ref.shape", viewdirs_ref.shape)
+
+                transformer_input_q = self.code(viewdirs_ref)
+                transformer_input_q = transformer_input_q.reshape(SB*B, NR, -1)
+
             
             xyz = repeat_interleave(xyz, NS)  # (SB*NS, B, 3)
             xyz_rot = torch.matmul(self.poses[:, None, :3, :3], xyz.unsqueeze(-1))[
@@ -258,12 +258,12 @@ class PixelNeRFNet(torch.nn.Module):
                 latent = self.encoder.index(
                     uv, None, self.image_shape
                 )  # (SB * NS, latent, B)
-                latent_ref = latent
-                latent_ref = latent_ref.transpose(1, 2).reshape(SB, NS, B, self.latent_size)
-                latent_ref = latent_ref.transpose(1, 2).reshape(SB*B, NS, self.latent_size)
-                z_feature_ref = z_feature.reshape(SB, NS, B, -1)
-                z_feature_ref = z_feature_ref.transpose(1, 2).reshape(SB*B, NS, -1)
-                transformer_input = torch.cat((latent_ref, z_feature_ref), dim=-1)
+                latent_src = latent
+                latent_src = latent_src.transpose(1, 2).reshape(SB, NS, B, self.latent_size)
+                latent_src = latent_src.transpose(1, 2).reshape(SB*B, NS, self.latent_size)
+                z_feature_src = z_feature.reshape(SB, NS, B, -1)
+                z_feature_src = z_feature_src.transpose(1, 2).reshape(SB*B, NS, -1)
+                transformer_input_k = torch.cat((latent_src, z_feature_src), dim=-1)
 
                 if self.stop_encoder_grad:
                     latent = latent.detach()
@@ -310,12 +310,13 @@ class PixelNeRFNet(torch.nn.Module):
 
             sigma = mlp_output
             # Run Radiance Transformer network.
+            #print(viewdirs_ref.shape, transformer_input.shape)
             if coarse or self.mlp_fine is None:
-                transformer_output = self.transformer_coarse(query=viewdirs_ref, key=transformer_input, value=transformer_input)
+                transformer_output = self.transformer_coarse(query=transformer_input_q, key=transformer_input_k, value=transformer_input_k)
             else:
-                transformer_output = self.transformer_fine(query=viewdirs_ref, key=transformer_input, value=transformer_input)
-            rgb_ref = transformer_output
-            
+                transformer_output = self.transformer_fine(query=transformer_input_q, key=transformer_input_k, value=transformer_input_k)
+            rgb_ref = transformer_output.reshape(SB, B, NR, 3)
+
             index_target = index_target.reshape(-1, 1)
             rgb = batched_index_select_nd(transformer_output, index_target)[:, 0]
             rgb = rgb.reshape(SB, B, -1)
@@ -323,7 +324,7 @@ class PixelNeRFNet(torch.nn.Module):
             rgb_ray = torch.sigmoid(rgb)
             sigma_ray = torch.relu(sigma)
 
-        return rgb_ray, sigma_ray, rgb_ref
+        return rgb_ray, sigma_ray, rgb_ref, uv_ref
 
 
     def load_weights(self, args, opt_init=False, strict=True, device=None):
@@ -384,31 +385,3 @@ class PixelNeRFNet(torch.nn.Module):
         rot = poses[:, :3, :3].transpose(1, 2)  # (NV, 3, 3)
         trans = -torch.bmm(rot, poses[:, :3, 3:])  # (NV, 3, 1)
         self.poses_ref = torch.cat((rot, trans), dim=-1)  # (NV, 3, 4)
-
-    """
-    def encode_ref(self, images, poses):
-        # Method only for DTU images.
-        self.num_ref_views = images.size(1)
-        images = images.reshape(-1, *images.shape[2:])
-        poses = poses.reshape(-1, 4, 4)
-
-        # Need index operation.
-        self.images_ref = images
-        rot = poses[:, :3, :3].transpose(1, 2)  # (NV, 3, 3)
-        trans = -torch.bmm(rot, poses[:, :3, 3:])  # (NV, 3, 1)
-        self.poses_ref = torch.cat((rot, trans), dim=-1)  # (NV, 3, 4)
-        # Re-use focal and c from source view encode function.
-    def index_ref(self, uv):
-        with profiler.record_function("ref_image_index"):
-            if uv.shape[0] == 1 and self.latent.shape[0] > 1:
-                uv = uv.expand(self.latent.shape[0], -1, -1)
-            uv = uv.unsqueeze(2)  # (B, N, 1, 2)
-
-            samples = F.grid_sample(
-                self.images_ref,
-                uv,
-                align_corners=True,mode='bilinear',
-                padding_mode='border'
-            )
-            return samples[:, :, :, 0]
-    """

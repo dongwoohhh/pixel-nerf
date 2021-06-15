@@ -22,4 +22,4 @@ python eval.py -D /workspace/datasets/dtu_dataset/rs_dtu_4 --checkpoints_path /w
 
 
 python train.py -D /workspace/datasets/dtu_dataset/rs_dtu_4 --checkpoints_path /workspace/results_nerf/pixel-nerf/summary --visual_path /workspace/results_nerf/pixel-nerf/visuals -n overfit_wo_masking -c conf/exp/dtu_debug.conf --gpu_id '1 0' -B 2 -V 3
-nsml run -d video_nfs3 -m 'overfit_wo_masking' -e train.py -a "--checkpoints_path /data/video_nfs3/dongwool/results_nerf/pixel-nerf/summary --visual_path /data/video_nfs3/dongwool/results_nerf/pixel-nerf/visuals --gpu_id '0 1 2 3' -D /data/video_nfs3/dongwool/datasets/dtu_dataset/rs_dtu_4 -V 3 -n overfit_wo_masking -c conf/exp/dtu_debug.conf" --nfs-output -c 16 -g 4 --shm-size '24G' --gpu-driver-version 400
+nsml run -d video_nfs3 -m 'overfit_transformer' -e train.py -a "--checkpoints_path /data/video_nfs3/dongwool/results_nerf/pixel-nerf/summary --visual_path /data/video_nfs3/dongwool/results_nerf/pixel-nerf/visuals --gpu_id '0 1 2 3' -D /data/video_nfs3/dongwool/datasets/dtu_dataset/rs_dtu_4 -V 3 -n overfit_wo_masking -c conf/exp/dtu.conf" --nfs-output -c 16 -g 4 --shm-size '24G' --gpu-driver-version 400
