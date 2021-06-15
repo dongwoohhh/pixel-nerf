@@ -5,6 +5,49 @@ import torch.nn.functional as F
 import numpy as np
 import util
 
+
+class RadianceTransformer2(nn.Module):
+    """
+    Represents RadianceTransformer2
+    """
+
+    def __init__(
+        self,
+        d_q,
+        d_k,
+        n_dim,
+        n_head,
+        n_layer
+    ):
+        super(RadianceTransformer2, self).__init__()
+
+        self.n_layer = n_layer
+        self.layers = []
+        # Linear Input latent projection
+        self.linear1 = nn.Linear(d_k, n_dim)
+
+        # Transformer for self-attention of src latent vector.
+        for i in range(n_layer):
+                self.layers.append(TransformerEncoderLayer(n_dim, n_head))
+        self.layers = nn.ModuleList(self.layers)
+        # Input slf_attn layer.
+        self.attn_from_ref_to_src = MultiHeadAttentionLayer(n_query=d_q, n_key=n_dim, n_value=n_dim, n_dim=n_dim, n_head=n_head)
+
+        self.layer_color = nn.Linear(n_dim, 3)
+
+    def forward(self, query, latent):
+        
+        out = self.linear1(latent)
+        for layer in self.layers:
+            out = layer(out)
+
+        out = self.attn_from_ref_to_src(query=query, key=out, value=out)
+
+        out = self.layer_color(out)
+
+        return out
+
+
 class RadianceTransformer(nn.Module):
     """
     Represents RadianceTransformer

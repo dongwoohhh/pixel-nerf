@@ -109,30 +109,29 @@ class RGBRefLoss(torch.nn.Module):
         self.l1_loss = torch.nn.L1Loss(reduction="none")
         
         self.register_buffer("scale", torch.empty(2, dtype=torch.float32), persistent=False)
-    def forward(self, rgb_ref, uv_ref, images, weights, n_rays):
+    def forward(self, rgb_ref, uv_ref, n_ref, images):
         SB, B, NR, _ = uv_ref.shape
         _, _, _ , H, W = images.shape
+        #print(n_ref)
 
         image_size = (float(W), float(H))
         uv_ref = uv_ref.transpose(1, 2).reshape(SB*NR, B, 2)
         images = images.reshape(SB*NR, 3, H, W)
-        weights = weights.reshape(SB, -1)
+        #weights = weights.reshape(SB, -1)
         rgb_ref_gt, mask_uv = self.index_images(uv_ref, images, image_size)
         
         rgb_ref_gt = rgb_ref_gt.reshape(SB, NR, 3, B).permute(0, 3, 1, 2)
         mask_uv = mask_uv.reshape(SB, NR, B).transpose(1, 2)
-        
         n_uv = torch.sum(mask_uv, dim=2)
-        #print(n_uv[0])
         loss = self.l1_loss(rgb_ref, rgb_ref_gt)
-        loss = torch.sum(mask_uv.unsqueeze(-1) * loss, dim=(2,3)) / n_uv #.mean((2,3))
-        print(torch.sum(weights.reshape(SB, n_rays, -1), dim=-1))
-        with torch.no_grad():
-            loss = weights*loss
-        loss = loss.reshape(SB, n_rays, -1)
-        loss = torch.sum(loss, dim=-1).mean()
-
-        return loss
+        if torch.sum(n_uv) > 0:
+            loss = torch.sum(torch.mean(mask_uv.unsqueeze(-1) * loss, dim=3)) / torch.sum(n_uv) #.mean((2,3))
+            print(loss)
+            return loss
+        else:
+            loss = torch.sum(mask_uv.unsqueeze(-1) * loss)
+            raise NotImplementedError
+            return loss
 
     def index_images(self, uv, images, image_size):
         self.scale[0] = 1 / image_size[0]

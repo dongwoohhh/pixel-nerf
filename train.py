@@ -216,12 +216,8 @@ class PixelNeRFTrainer(trainlib.Trainer):
             all_focals.to(device=device),
             c=all_c.to(device=device) if all_c is not None else None,
         )
-        # encode_ref
-        net.encode_ref(
-            all_poses,
-        )
-
-        render_dict = DotMap(render_par(all_rays, all_index_target, want_weights=True,))
+        all_poses = net.encode_all_poses(all_poses)
+        render_dict = DotMap(render_par(all_rays, all_poses, all_index_target, training=True, want_weights=True,))
         coarse = render_dict.coarse
         fine = render_dict.fine
         using_fine = len(fine) > 0
@@ -231,12 +227,11 @@ class PixelNeRFTrainer(trainlib.Trainer):
         #raise NotImplementedError
         """
         loss_dict = {}
-
         rgb_loss = self.rgb_coarse_crit(coarse.rgb, all_rgb_gt)
         loss_dict["rc"] = rgb_loss.item() * self.lambda_coarse
 
         all_images_0to1 = all_images * 0.5 + 0.5        
-        rgb_ref_loss = self.rgb_ref_crit(coarse.rgb_ref, coarse.uv_ref, all_images_0to1, coarse.weights, args.ray_batch_size)
+        rgb_ref_loss = self.rgb_ref_crit(coarse.rgb_ref, coarse.uv_ref, coarse.n_ref, all_images_0to1)
         loss_dict["rc_ref"] = rgb_ref_loss.item() * self.lambda_coarse  
 
         #loss_dict["rc_ref"] = rgb_ref_loss.item * self.lambda_coarse
@@ -245,7 +240,7 @@ class PixelNeRFTrainer(trainlib.Trainer):
             rgb_loss = rgb_loss * self.lambda_coarse + fine_loss * self.lambda_fine
             loss_dict["rf"] = fine_loss.item() * self.lambda_fine
 
-            fine_ref_loss = self.rgb_ref_crit(fine.rgb_ref, fine.uv_ref, all_images_0to1, fine.weights, args.ray_batch_size)
+            fine_ref_loss = self.rgb_ref_crit(fine.rgb_ref, fine.uv_ref, fine.n_ref, all_images_0to1)
             rgb_ref_loss = rgb_ref_loss * self.lambda_coarse + fine_ref_loss * self.lambda_fine
             loss_dict["rf_ref"] = fine_ref_loss.item() * self.lambda_fine  
 
@@ -308,6 +303,7 @@ class PixelNeRFTrainer(trainlib.Trainer):
         with torch.no_grad():
             test_rays = cam_rays[view_dest]  # (H, W, 8)
             test_images = images[views_src]  # (NS, 3, H, W)
+            test_poses = poses[view_dest]
             net.encode(
                 test_images.unsqueeze(0),
                 poses[views_src].unsqueeze(0),
@@ -317,10 +313,10 @@ class PixelNeRFTrainer(trainlib.Trainer):
             index_dest =  view_dest*torch.ones((H, W), dtype=torch.long).to(device=device)
             index_dest = index_dest.reshape(1, -1, 1)
             
-            net.encode_ref(poses.unsqueeze(0))
             test_rays = test_rays.reshape(1, H * W, -1)
-
-            render_dict = DotMap(render_par(test_rays, index_dest, want_weights=True))
+            test_poses = test_poses.reshape(1, 1, 4, 4)
+            test_poses = net.encode_all_poses(test_poses)
+            render_dict = DotMap(render_par(test_rays, test_poses, index_dest, training=False, want_weights=True))
             coarse = render_dict.coarse
             fine = render_dict.fine
 

@@ -1,9 +1,10 @@
 """
 Main model implementation
 """
+from numpy.core.fromnumeric import repeat
 import torch
 from .encoder import ImageEncoder
-from .transformer import RadianceTransformer
+from .transformer import RadianceTransformer, RadianceTransformer2
 from .code import PositionalEncoding
 from .model_util import make_encoder, make_mlp
 import torch.autograd.profiler as profiler
@@ -91,14 +92,19 @@ class PixelNeRFNet(torch.nn.Module):
         self.register_buffer("poses_ref", torch.empty(1, 3, 4), persistent=False)
         self.num_objs = 0
         self.num_views_per_obj = 1
-
+        """
          # Radiance Transformer
         d_latent_transformer = 128
         self.transformer_coarse = RadianceTransformer(d_q=self.code.d_out, d_k=d_latent+d_in,
             n_dim=d_latent_transformer, n_head=1, n_layer=1)
         self.transformer_fine = RadianceTransformer(d_q=self.code.d_out, d_k=d_latent+d_in,
             n_dim=d_latent_transformer, n_head=1, n_layer=1)
-
+        """
+        d_latent_transformer = 256
+        self.transformer_coarse = RadianceTransformer2(d_q=self.code.d_out, d_k=d_latent+d_in,
+            n_dim=d_latent_transformer, n_head=4, n_layer=4)
+        self.transformer_fine = RadianceTransformer2(d_q=self.code.d_out, d_k=d_latent+d_in,
+            n_dim=d_latent_transformer, n_head=4, n_layer=4)
 
     def encode(self, images, poses, focal, z_bounds=None, c=None):
         """
@@ -157,7 +163,7 @@ class PixelNeRFNet(torch.nn.Module):
         if self.use_global_encoder:
             self.global_encoder(images)
 
-    def forward(self, xyz, index_target, coarse=True, viewdirs=None, compute_ref=True, far=False):
+    def forward(self, xyz, index_target, all_poses, coarse=True, viewdirs=None, compute_target=True, far=False):
         """
         Predict (r, g, b, sigma) at world space points xyz.
         Please call encode first!
@@ -170,8 +176,10 @@ class PixelNeRFNet(torch.nn.Module):
         with profiler.record_function("model_inference"):
             SB, B, _ = xyz.shape
             NS = self.num_views_per_obj
-            NR = self.num_ref_views
+
             # Transform query points into the camera spaces of the input views
+            """
+            compute_ref = True
             if compute_ref:
                 xyz_ref = repeat_interleave(xyz, NR)
                 xyz_rot_ref = torch.matmul(self.poses_ref[:, None, :3, :3], xyz_ref.unsqueeze(-1))[
@@ -187,20 +195,36 @@ class PixelNeRFNet(torch.nn.Module):
                     self.c.unsqueeze(1), NR if self.c.shape[0] > 1 else 1
                 )
                 uv_ref = uv_ref.reshape(SB, NR, B, 2).transpose(1, 2)
-                
+             
 
                 viewdirs_ref = viewdirs.reshape(SB, B, 3, 1)
                 viewdirs_ref = repeat_interleave(viewdirs_ref, NR) # (SB*NR, B, 3, 1)
+                print(viewdirs_ref.shape)
+                print( self.poses_ref[:, None, :3, :3].shape)
+                
                 viewdirs_ref = torch.matmul(
                     self.poses_ref[:, None, :3, :3], viewdirs_ref
                 )
+                print(viewdirs_ref.shape)
+                
                 viewdirs_ref = viewdirs_ref.reshape(SB, NR, B, 3).transpose(1, 2)
                 viewdirs_ref = viewdirs_ref.reshape(-1, 3)
 
                 transformer_input_q = self.code(viewdirs_ref)
                 transformer_input_q = transformer_input_q.reshape(SB*B, NR, -1)
+            """
+            if compute_target:
+                poses_tgt = batched_index_select_nd(all_poses, index_target)
 
-            
+                viewdirs_tgt = viewdirs.reshape(SB, B, 3, 1)
+                
+                viewdirs_tgt = torch.matmul(
+                    poses_tgt[:, :, :3, :3], viewdirs_tgt
+                )
+                viewdirs_tgt = viewdirs_tgt.reshape(-1, 3)
+                transformer_query = self.code(viewdirs_tgt)
+                transformer_query = transformer_query.reshape(SB*B, 1, -1)
+
             xyz = repeat_interleave(xyz, NS)  # (SB*NS, B, 3)
             xyz_rot = torch.matmul(self.poses[:, None, :3, :3], xyz.unsqueeze(-1))[
                 ..., 0
@@ -260,7 +284,7 @@ class PixelNeRFNet(torch.nn.Module):
                 latent_src = latent_src.transpose(1, 2).reshape(SB*B, NS, self.latent_size)
                 z_feature_src = z_feature.reshape(SB, NS, B, -1)
                 z_feature_src = z_feature_src.transpose(1, 2).reshape(SB*B, NS, -1)
-                transformer_input_k = torch.cat((latent_src, z_feature_src), dim=-1)
+                transformer_key = torch.cat((latent_src, z_feature_src), dim=-1)
 
                 if self.stop_encoder_grad:
                     latent = latent.detach()
@@ -307,7 +331,21 @@ class PixelNeRFNet(torch.nn.Module):
 
             sigma = mlp_output
             # Run Radiance Transformer network.
-            #print(viewdirs_ref.shape, transformer_input.shape)
+            #self.transformer_key = transformer_key
+            if coarse or self.mlp_fine is None:
+                transformer_output = self.transformer_coarse(query=transformer_query, latent=transformer_key)
+            else:
+                transformer_output = self.transformer_fine(query=transformer_query, latent=transformer_key)
+            
+            rgb = transformer_output[:, 0].reshape(SB, B, 3)
+            
+            rgb = torch.sigmoid(rgb)
+            sigma = torch.relu(sigma)
+
+        return rgb, sigma, transformer_key
+            
+
+        """
             if coarse or self.mlp_fine is None:
                 transformer_output = self.transformer_coarse(query=transformer_input_q, key=transformer_input_k, value=transformer_input_k)
             else:
@@ -322,7 +360,35 @@ class PixelNeRFNet(torch.nn.Module):
             sigma_ray = torch.relu(sigma)
 
         return rgb_ray, sigma_ray, rgb_ref, uv_ref
+        """
+    def forward_ref(self, xyz, viewdirs, index_batch, all_poses, transformer_key, coarse):
+        B, _ = xyz.shape
+        _, NR, _, _ = all_poses.shape
+        
+        poses_ref = all_poses[index_batch]#batched_index_select_nd(all_poses ,index_batch.reshape(-1, 1))
+        
+        xyz_ref = xyz[:, None, :, None].repeat(1, NR, 1, 1)
+        xyz_rot_ref = torch.matmul(poses_ref[:, :, :3, :3], xyz_ref)[..., 0]
+        xyz_ref = xyz_rot_ref + poses_ref[:, :, :3, 3]
 
+        uv_ref = -xyz_ref[:, :, :2] / xyz_ref[:, :, 2:]
+        uv_ref *= self.focal[index_batch].unsqueeze(1).repeat(1, NR, 1)
+        uv_ref += self.c[index_batch].unsqueeze(1).repeat(1, NR, 1)
+
+        viewdirs_ref = viewdirs[:, None, :, None].repeat(1, NR, 1, 1)
+        viewdirs_ref = torch.matmul(poses_ref[:, :, :3, :3], viewdirs_ref)[..., 0]
+
+        transformer_query = self.code(viewdirs_ref.reshape(-1, 3))
+        transformer_query = transformer_query.reshape(B, NR, -1)
+
+        if coarse:
+            transformer_output = self.transformer_coarse(query=transformer_query, latent=transformer_key)
+        else:
+            transformer_output = self.transformer_fine(query=transformer_query, latent=transformer_key)
+
+        rgb_ref = transformer_output
+
+        return rgb_ref, uv_ref
 
     def load_weights(self, args, opt_init=False, strict=True, device=None):
         """
@@ -375,10 +441,13 @@ class PixelNeRFNet(torch.nn.Module):
         return self
 
     
-    def encode_ref(self, poses):
-        self.num_ref_views = poses.size(1)
+    def encode_all_poses(self, poses):
+        SB, NV, _ , _ = poses.shape
         poses = poses.reshape(-1, 4, 4)
         
         rot = poses[:, :3, :3].transpose(1, 2)  # (NV, 3, 3)
         trans = -torch.bmm(rot, poses[:, :3, 3:])  # (NV, 3, 1)
-        self.poses_ref = torch.cat((rot, trans), dim=-1)  # (NV, 3, 4)
+        poses_ref = torch.cat((rot, trans), dim=-1)  # (NV, 3, 4)
+        poses_ref = poses_ref.reshape(SB, NV, 3, 4)
+
+        return poses_ref
