@@ -108,25 +108,42 @@ class RGBRefLoss(torch.nn.Module):
         super().__init__()
         self.l1_loss = torch.nn.L1Loss(reduction="none")
         
-    def forward(self, rgb_ref, uv_ref, images, weights):
+        self.register_buffer("scale", torch.empty(2, dtype=torch.float32), persistent=False)
+    def forward(self, rgb_ref, uv_ref, images, weights, n_rays):
         SB, B, NR, _ = uv_ref.shape
         _, _, _ , H, W = images.shape
-        
+
+        image_size = (float(W), float(H))
         uv_ref = uv_ref.transpose(1, 2).reshape(SB*NR, B, 2)
         images = images.reshape(SB*NR, 3, H, W)
         weights = weights.reshape(SB, -1)
-
-        rgb_ref_gt = self.index_images(uv_ref, images)
+        rgb_ref_gt, mask_uv = self.index_images(uv_ref, images, image_size)
+        
         rgb_ref_gt = rgb_ref_gt.reshape(SB, NR, 3, B).permute(0, 3, 1, 2)
+        mask_uv = mask_uv.reshape(SB, NR, B).transpose(1, 2)
         
+        n_uv = torch.sum(mask_uv, dim=2)
+        #print(n_uv[0])
         loss = self.l1_loss(rgb_ref, rgb_ref_gt)
-        
-        loss = loss.mean((2,3))        
-        loss = torch.sum(weights*loss, dim=1).mean()
-        
+        loss = torch.sum(mask_uv.unsqueeze(-1) * loss, dim=(2,3)) / n_uv #.mean((2,3))
+        print(torch.sum(weights.reshape(SB, n_rays, -1), dim=-1))
+        with torch.no_grad():
+            loss = weights*loss
+        loss = loss.reshape(SB, n_rays, -1)
+        loss = torch.sum(loss, dim=-1).mean()
+
         return loss
 
-    def index_images(self, uv, images):
+    def index_images(self, uv, images, image_size):
+        self.scale[0] = 1 / image_size[0]
+        self.scale[1] = 1 / image_size[1]
+        self.scale = self.scale.to(device=uv.device)
+        epsilon = [1*self.scale[0]*2, 1*self.scale[1]*2]
+        
+        uv = uv * self.scale * 2 - 1.0
+        mask = torch.where((uv[:, :, 0]> -1.0-epsilon[0]) & (uv[:, :, 0] <=1.0+epsilon[0]) & (uv[:, :, 1]>=-1.0-epsilon[1]) & (uv[:, :, 1]<=1.0+epsilon[1]),
+                            torch.ones_like(uv[:,:, 0]), torch.zeros_like(uv[:,:, 0]))
+        
         uv = uv.unsqueeze(2)
         samples = F.grid_sample(
             images,
@@ -134,4 +151,4 @@ class RGBRefLoss(torch.nn.Module):
             align_corners=True, mode='bilinear',
             padding_mode='border'
         )
-        return samples[:, :, :, 0]
+        return samples[:, :, :, 0], mask

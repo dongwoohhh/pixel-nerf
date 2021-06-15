@@ -318,7 +318,7 @@ class NeRFRenderer(torch.nn.Module):
                     coarse_composite, superbatch_size, want_weights=want_weights,
                 ),
             )
-            
+
             if self.using_fine:
                 all_samps = [z_coarse]
                 if self.n_fine - self.n_fine_depth > 0:
@@ -331,9 +331,11 @@ class NeRFRenderer(torch.nn.Module):
                     )  # (B, Kfd)
                 z_combine = torch.cat(all_samps, dim=-1)  # (B, Kc + Kf)
                 z_combine_sorted, argsort = torch.sort(z_combine, dim=-1)
+                
                 fine_composite = self.composite(
                     model, rays, z_combine_sorted, index_target, coarse=False, sb=superbatch_size,
                 )
+
                 outputs.fine = self._format_outputs(
                     fine_composite, superbatch_size, want_weights=want_weights,
                 )

@@ -187,10 +187,7 @@ class PixelNeRFNet(torch.nn.Module):
                     self.c.unsqueeze(1), NR if self.c.shape[0] > 1 else 1
                 )
                 uv_ref = uv_ref.reshape(SB, NR, B, 2).transpose(1, 2)
-
-                """
-                self.color_ref = self.index_ref(uv_ref)  # (SB * NR, 3, B)
-                """
+                
 
                 viewdirs_ref = viewdirs.reshape(SB, B, 3, 1)
                 viewdirs_ref = repeat_interleave(viewdirs_ref, NR) # (SB*NR, B, 3, 1)

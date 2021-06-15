@@ -177,6 +177,14 @@ class PixelNeRFTrainer(trainlib.Trainer):
                 pix_inds = pix[..., 0] * H * W + pix[..., 1] * W + pix[..., 2]
             else:
                 pix_inds = torch.randint(0, NV * H * W, (args.ray_batch_size,))
+            
+            idx_val = torch.stack([pix_inds//(H*W), pix_inds%(H*W)//(W), pix_inds%W]).T
+
+            """
+            print(idx_val)
+            print(rgb_gt_all[pix_inds][0])
+            print(images[idx_val[0][0], :, idx_val[0][1], idx_val[0][2]] * 0.5 + 0.5)
+            """            
 
             rgb_gt = rgb_gt_all[pix_inds]  # (ray_batch_size, 3)
             rays = cam_rays.view(-1, cam_rays.shape[-1])[pix_inds].to(
@@ -217,14 +225,18 @@ class PixelNeRFTrainer(trainlib.Trainer):
         coarse = render_dict.coarse
         fine = render_dict.fine
         using_fine = len(fine) > 0
-
+        """
+        for i in range(8):
+            print(fine.uv_ref[0, i*20:(i+1)*20, idx_val[i][0], :])
+        #raise NotImplementedError
+        """
         loss_dict = {}
 
         rgb_loss = self.rgb_coarse_crit(coarse.rgb, all_rgb_gt)
         loss_dict["rc"] = rgb_loss.item() * self.lambda_coarse
 
         all_images_0to1 = all_images * 0.5 + 0.5        
-        rgb_ref_loss = self.rgb_ref_crit(coarse.rgb_ref, coarse.uv_ref, all_images_0to1, coarse.weights)
+        rgb_ref_loss = self.rgb_ref_crit(coarse.rgb_ref, coarse.uv_ref, all_images_0to1, coarse.weights, args.ray_batch_size)
         loss_dict["rc_ref"] = rgb_ref_loss.item() * self.lambda_coarse  
 
         #loss_dict["rc_ref"] = rgb_ref_loss.item * self.lambda_coarse
@@ -233,7 +245,7 @@ class PixelNeRFTrainer(trainlib.Trainer):
             rgb_loss = rgb_loss * self.lambda_coarse + fine_loss * self.lambda_fine
             loss_dict["rf"] = fine_loss.item() * self.lambda_fine
 
-            fine_ref_loss = self.rgb_ref_crit(fine.rgb_ref, fine.uv_ref, all_images_0to1, fine.weights)
+            fine_ref_loss = self.rgb_ref_crit(fine.rgb_ref, fine.uv_ref, all_images_0to1, fine.weights, args.ray_batch_size)
             rgb_ref_loss = rgb_ref_loss * self.lambda_coarse + fine_ref_loss * self.lambda_fine
             loss_dict["rf_ref"] = fine_ref_loss.item() * self.lambda_fine  
 
