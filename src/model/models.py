@@ -102,9 +102,9 @@ class PixelNeRFNet(torch.nn.Module):
         """
         d_latent_transformer = 256
         self.transformer_coarse = RadianceTransformer2(d_q=self.code.d_out, d_k=d_latent+d_in,
-            n_dim=d_latent_transformer, n_head=1, n_layer=2)
+            n_dim=d_latent_transformer, n_head=4, n_layer=4)
         self.transformer_fine = RadianceTransformer2(d_q=self.code.d_out, d_k=d_latent+d_in,
-            n_dim=d_latent_transformer, n_head=1, n_layer=2)
+            n_dim=d_latent_transformer, n_head=4, n_layer=4)
 
     def encode(self, images, poses, focal, z_bounds=None, c=None):
         """
@@ -163,7 +163,7 @@ class PixelNeRFNet(torch.nn.Module):
         if self.use_global_encoder:
             self.global_encoder(images)
 
-    def forward(self, xyz, index_target, all_poses, coarse=True, viewdirs=None, compute_target=True, far=False):
+    def forward(self, xyz, index_target, coarse=True, viewdirs=None, compute_target=True, far=False):
         """
         Predict (r, g, b, sigma) at world space points xyz.
         Please call encode first!
@@ -177,47 +177,11 @@ class PixelNeRFNet(torch.nn.Module):
             SB, B, _ = xyz.shape
             NS = self.num_views_per_obj
 
-            # Transform query points into the camera spaces of the input views
-            """
-            compute_ref = True
-            if compute_ref:
-                xyz_ref = repeat_interleave(xyz, NR)
-                xyz_rot_ref = torch.matmul(self.poses_ref[:, None, :3, :3], xyz_ref.unsqueeze(-1))[
-                    ..., 0
-                ]
-                xyz_ref = xyz_rot_ref + self.poses_ref[:, None, :3, 3]
-
-                uv_ref = -xyz_ref[:, :, :2] / xyz_ref[:, :, 2:]
-                uv_ref *= repeat_interleave(
-                    self.focal.unsqueeze(1), NR if self.focal.shape[0] > 1 else 1
-                )
-                uv_ref += repeat_interleave(
-                    self.c.unsqueeze(1), NR if self.c.shape[0] > 1 else 1
-                )
-                uv_ref = uv_ref.reshape(SB, NR, B, 2).transpose(1, 2)
-             
-
-                viewdirs_ref = viewdirs.reshape(SB, B, 3, 1)
-                viewdirs_ref = repeat_interleave(viewdirs_ref, NR) # (SB*NR, B, 3, 1)
-                print(viewdirs_ref.shape)
-                print( self.poses_ref[:, None, :3, :3].shape)
-                
-                viewdirs_ref = torch.matmul(
-                    self.poses_ref[:, None, :3, :3], viewdirs_ref
-                )
-                print(viewdirs_ref.shape)
-                
-                viewdirs_ref = viewdirs_ref.reshape(SB, NR, B, 3).transpose(1, 2)
-                viewdirs_ref = viewdirs_ref.reshape(-1, 3)
-
-                transformer_input_q = self.code(viewdirs_ref)
-                transformer_input_q = transformer_input_q.reshape(SB*B, NR, -1)
-            """
+            # Transform query points into the camera spaces of the input views            
             if compute_target:
-                poses_tgt = batched_index_select_nd(all_poses, index_target)
+                poses_tgt = batched_index_select_nd(self.poses_ref, index_target)
 
                 viewdirs_tgt = viewdirs.reshape(SB, B, 3, 1)
-                
                 viewdirs_tgt = torch.matmul(
                     poses_tgt[:, :, :3, :3], viewdirs_tgt
                 )
@@ -346,29 +310,12 @@ class PixelNeRFNet(torch.nn.Module):
             transformer_key = transformer_key.reshape(SB, B, NS, -1)
 
         return rgb, sigma, transformer_key
-            
 
-        """
-            if coarse or self.mlp_fine is None:
-                transformer_output = self.transformer_coarse(query=transformer_input_q, key=transformer_input_k, value=transformer_input_k)
-            else:
-                transformer_output = self.transformer_fine(query=transformer_input_q, key=transformer_input_k, value=transformer_input_k)
-            rgb_ref = transformer_output.reshape(SB, B, NR, 3)
-
-            index_target = index_target.reshape(-1, 1)
-            rgb = batched_index_select_nd(transformer_output, index_target)[:, 0]
-            rgb = rgb.reshape(SB, B, -1)
-
-            rgb_ray = torch.sigmoid(rgb)
-            sigma_ray = torch.relu(sigma)
-
-        return rgb_ray, sigma_ray, rgb_ref, uv_ref
-        """
-    def forward_ref(self, xyz, viewdirs, index_batch, all_poses, transformer_key, coarse):
+    def forward_ref(self, xyz, viewdirs, index_batch, transformer_key, coarse):
         B, _ = xyz.shape
-        _, NR, _, _ = all_poses.shape
+        _, NR, _, _ = self.poses_ref.shape
         
-        poses_ref = all_poses[index_batch]#batched_index_select_nd(all_poses ,index_batch.reshape(-1, 1))
+        poses_ref = self.poses_ref[index_batch]#batched_index_select_nd(all_poses ,index_batch.reshape(-1, 1))
         
         xyz_ref = xyz[:, None, :, None].repeat(1, NR, 1, 1)
         xyz_rot_ref = torch.matmul(poses_ref[:, :, :3, :3], xyz_ref)[..., 0]
@@ -425,14 +372,14 @@ class PixelNeRFNet(torch.nn.Module):
             )
         return self
 
-    def save_weights(self, args, opt_init=False):
+    def save_weights(self, args, epoch, batch, opt_init=False):
         """
         Helper for saving weights according to argparse arguments
         :param opt_init if true, saves from init checkpoint instead of usual
         """
         from shutil import copyfile
 
-        ckpt_name = "pixel_nerf_init" if opt_init else "pixel_nerf_latest"
+        ckpt_name = "pixel_nerf_init" if opt_init else "pixel_nerf_{:04}_{:04}".format(epoch, batch)
         backup_name = "pixel_nerf_init_backup" if opt_init else "pixel_nerf_backup"
 
         ckpt_path = osp.join(args.checkpoints_path, args.name, ckpt_name)
@@ -451,6 +398,5 @@ class PixelNeRFNet(torch.nn.Module):
         rot = poses[:, :3, :3].transpose(1, 2)  # (NV, 3, 3)
         trans = -torch.bmm(rot, poses[:, :3, 3:])  # (NV, 3, 1)
         poses_ref = torch.cat((rot, trans), dim=-1)  # (NV, 3, 4)
-        poses_ref = poses_ref.reshape(SB, NV, 3, 4)
+        self.poses_ref = poses_ref.reshape(SB, NV, 3, 4)
 
-        return poses_ref

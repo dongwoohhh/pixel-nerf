@@ -216,8 +216,9 @@ class PixelNeRFTrainer(trainlib.Trainer):
             all_focals.to(device=device),
             c=all_c.to(device=device) if all_c is not None else None,
         )
-        all_poses = net.encode_all_poses(all_poses)
-        render_dict = DotMap(render_par(all_rays, all_poses, all_index_target, training=True, want_weights=True,))
+        net.encode_all_poses(all_poses)
+        
+        render_dict = DotMap(render_par(all_rays, all_index_target, training=True, want_weights=True,))
         coarse = render_dict.coarse
         fine = render_dict.fine
         using_fine = len(fine) > 0
@@ -231,7 +232,7 @@ class PixelNeRFTrainer(trainlib.Trainer):
         loss_dict["rc"] = rgb_loss.item() * self.lambda_coarse
 
         all_images_0to1 = all_images * 0.5 + 0.5        
-        rgb_ref_loss = self.rgb_ref_crit(coarse.rgb_ref, coarse.uv_ref, coarse.n_ref, all_images_0to1)
+        rgb_ref_loss = self.rgb_ref_crit(coarse.rgb_ref, coarse.uv_ref, all_images_0to1)
         loss_dict["rc_ref"] = rgb_ref_loss.item() * self.lambda_coarse  
 
         #loss_dict["rc_ref"] = rgb_ref_loss.item * self.lambda_coarse
@@ -240,7 +241,7 @@ class PixelNeRFTrainer(trainlib.Trainer):
             rgb_loss = rgb_loss * self.lambda_coarse + fine_loss * self.lambda_fine
             loss_dict["rf"] = fine_loss.item() * self.lambda_fine
 
-            fine_ref_loss = self.rgb_ref_crit(fine.rgb_ref, fine.uv_ref, fine.n_ref, all_images_0to1)
+            fine_ref_loss = self.rgb_ref_crit(fine.rgb_ref, fine.uv_ref, all_images_0to1)
             rgb_ref_loss = rgb_ref_loss * self.lambda_coarse + fine_ref_loss * self.lambda_fine
             loss_dict["rf_ref"] = fine_ref_loss.item() * self.lambda_fine  
 
@@ -316,8 +317,8 @@ class PixelNeRFTrainer(trainlib.Trainer):
             
             test_rays = test_rays.reshape(1, H * W, -1)
             test_poses = test_poses.reshape(1, 1, 4, 4)
-            test_poses = net.encode_all_poses(test_poses)
-            render_dict = DotMap(render_par(test_rays, test_poses, index_dest, training=False, want_weights=True))
+            net.encode_all_poses(test_poses)
+            render_dict = DotMap(render_par(test_rays, index_dest, training=False, want_weights=True))
             coarse = render_dict.coarse
             fine = render_dict.fine
 

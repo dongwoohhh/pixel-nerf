@@ -110,10 +110,9 @@ class RGBRefLoss(torch.nn.Module):
         self.l1_loss = torch.nn.L1Loss(reduction="none")
         
         self.register_buffer("scale", torch.empty(2, dtype=torch.float32), persistent=False)
-    def forward(self, rgb_ref, uv_ref, n_ref, images):
+    def forward(self, rgb_ref, uv_ref, images):
         SB, B, NR, _ = uv_ref.shape
         _, _, _ , H, W = images.shape
-        #print(n_ref)
 
         image_size = (float(W), float(H))
         uv_ref = uv_ref.transpose(1, 2).reshape(SB*NR, B, 2)
