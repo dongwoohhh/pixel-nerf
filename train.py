@@ -310,7 +310,8 @@ class PixelNeRFTrainer(trainlib.Trainer):
                 focal.to(device=device),
                 c=c.to(device=device) if c is not None else None,
             )
-            index_dest =  view_dest*torch.ones((H, W), dtype=torch.long).to(device=device)
+            #index_dest =  view_dest*torch.ones((H, W), dtype=torch.long).to(device=device)
+            index_dest =  torch.zeros((H, W), dtype=torch.long).to(device=device)
             index_dest = index_dest.reshape(1, -1, 1)
             
             test_rays = test_rays.reshape(1, H * W, -1)

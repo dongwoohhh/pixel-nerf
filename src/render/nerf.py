@@ -195,6 +195,7 @@ class NeRFRenderer(torch.nn.Module):
             sigma_ray_all = []
             rgb_ref_all = []
             uv_ref_all = []
+            transformer_key_all = []
             if sb > 0:
                 points = points.reshape(
                     sb, -1, 3
@@ -226,6 +227,10 @@ class NeRFRenderer(torch.nn.Module):
                     rgb_ray, sigma_ray, transformer_key = model(pnts, indices, coarse=coarse, viewdirs=dirs, all_poses=poses)
                     rgb_ray_all.append(rgb_ray)
                     sigma_ray_all.append(sigma_ray)
+                    if self.training:
+                        transformer_key_all.append(transformer_key)
+                    else:
+                        del transformer_key
                     """
                     rgb_ray, sigma_ray, rgb_ref, uv_ref = model(pnts, indices, coarse=coarse, viewdirs=dirs)
                     rgb_ray_all.append(rgb_ray)
@@ -236,6 +241,10 @@ class NeRFRenderer(torch.nn.Module):
             else:
                 for pnts in split_points:
                     val_all.append(model(pnts, index_target, coarse=coarse))
+            if self.training:
+                transformer_keys = torch.cat(transformer_key_all, dim=eval_batch_dim)
+
+            #print(transformer_keys.shape)
             
             # (B*K, 4) OR (SB, B'*K, 4)
             rgbs = torch.cat(rgb_ray_all, dim=eval_batch_dim)
@@ -272,20 +281,30 @@ class NeRFRenderer(torch.nn.Module):
             rgb_ref_all = torch.zeros((sb,B*K//sb, NR, 3), device=rgb_final.device)
             uv_ref_all = -1 * torch.ones((sb,B*K//sb, NR, 2), device=rgb_final.device)
             n_ref_all = torch.zeros((sb))
+
             if self.training:
                 weights_ref = weights.reshape(-1)
-                mask_ref = torch.where(weights_ref > 0.01,#self.weights_threshold, #
-                                       torch.ones_like(weights_ref),
-                                       torch.zeros_like(weights_ref))
+                mask_ref = torch.where(weights_ref > self.weights_threshold, # 0.01,#
+                                       torch.ones_like(weights_ref, device=rgb_final.device),
+                                       torch.zeros_like(weights_ref, device=rgb_final.device))
+
                 cond_ref = torch.sum(mask_ref)
                 mask_ref = mask_ref.bool()[:, None]
                 points_ref = torch.masked_select(points.reshape(-1, 3), mask_ref).reshape(-1, 3)
+
                 viewdirs_ref = torch.masked_select(viewdirs.reshape(-1, 3), mask_ref).reshape(-1, 3)
-                index_batch = torch.arange(sb)[:, None].repeat(1, B*K//sb).reshape(-1, 1)
+                index_batch = torch.arange(sb, device=rgb_final.device)[:, None].repeat(1, B*K//sb).reshape(-1, 1)
                 index_batch_ref = torch.masked_select(index_batch, mask_ref)
+                _, _, NV, NC =transformer_key.shape
+                """
+                print(points.shape)
+                print(mask_ref.shape)
+                print(B*K, NV, NC)
+                print(transformer_keys.reshape(B*K, -1).shape)
+                """
                 
-                _, NV, NC =transformer_key.shape
-                transformer_key_ref = torch.masked_select(transformer_key.reshape(B*K, -1), mask_ref).reshape(-1, NV, NC)
+                transformer_key_ref = torch.masked_select(transformer_keys.reshape(B*K, -1), mask_ref).reshape(-1, NV, NC)
+                #raise NotImplementedError
                 if cond_ref:
                     rgb_ref, uv_ref = model.forward_ref(points_ref, viewdirs_ref, index_batch_ref, poses, transformer_key_ref, coarse)                    
 
@@ -295,7 +314,7 @@ class NeRFRenderer(torch.nn.Module):
                         rgb_ref_all[i, :n_batch_i] = torch.masked_select(rgb_ref.reshape(-1, NR*3), mask_i.unsqueeze(-1)).reshape(n_batch_i, NR, 3)
                         uv_ref_all[i, :n_batch_i] = torch.masked_select(uv_ref.reshape(-1, NR*2), mask_i.unsqueeze(-1)).reshape(n_batch_i, NR, 2)
                         n_ref_all[i] = n_batch_i
-            
+
             points = None
             viewdirs = None
             index_target = None

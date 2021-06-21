@@ -102,9 +102,9 @@ class PixelNeRFNet(torch.nn.Module):
         """
         d_latent_transformer = 256
         self.transformer_coarse = RadianceTransformer2(d_q=self.code.d_out, d_k=d_latent+d_in,
-            n_dim=d_latent_transformer, n_head=4, n_layer=4)
+            n_dim=d_latent_transformer, n_head=1, n_layer=2)
         self.transformer_fine = RadianceTransformer2(d_q=self.code.d_out, d_k=d_latent+d_in,
-            n_dim=d_latent_transformer, n_head=4, n_layer=4)
+            n_dim=d_latent_transformer, n_head=1, n_layer=2)
 
     def encode(self, images, poses, focal, z_bounds=None, c=None):
         """
@@ -332,6 +332,7 @@ class PixelNeRFNet(torch.nn.Module):
             sigma = mlp_output
             # Run Radiance Transformer network.
             #self.transformer_key = transformer_key
+
             if coarse or self.mlp_fine is None:
                 transformer_output = self.transformer_coarse(query=transformer_query, latent=transformer_key)
             else:
@@ -341,6 +342,8 @@ class PixelNeRFNet(torch.nn.Module):
             
             rgb = torch.sigmoid(rgb)
             sigma = torch.relu(sigma)
+
+            transformer_key = transformer_key.reshape(SB, B, NS, -1)
 
         return rgb, sigma, transformer_key
             

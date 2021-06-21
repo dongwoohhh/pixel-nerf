@@ -200,7 +200,7 @@ class Trainer:
                             )
                         torch.save({"iter": step_id + 1}, self.iter_state_path)
                         self.extra_save_state()
-
+                    #if 0:
                     if batch % self.vis_interval == 0:
                         print("generating visualization")
                         if self.fixed_test:

@@ -1,6 +1,7 @@
 import torch
 import torch.nn.functional as F
-
+from torchvision.utils import save_image
+import random
 
 class AlphaLossNV2(torch.nn.Module):
     """
@@ -119,19 +120,39 @@ class RGBRefLoss(torch.nn.Module):
         images = images.reshape(SB*NR, 3, H, W)
         #weights = weights.reshape(SB, -1)
         rgb_ref_gt, mask_uv = self.index_images(uv_ref, images, image_size)
-        
+
         rgb_ref_gt = rgb_ref_gt.reshape(SB, NR, 3, B).permute(0, 3, 1, 2)
         mask_uv = mask_uv.reshape(SB, NR, B).transpose(1, 2)
+        """
+        # For visualize.
+        i = random.randint(1, 100)
+        if torch.sum(mask_uv[0, 0]) > 0:
+            print(torch.sum(mask_uv[0, 0]))
+            print(rgb_ref_gt[0, 0, :, :].shape)
+            save_image(images[24], 'image_{}.png'.format(i))
+            tmp = rgb_ref_gt[0, 0, :, :]
+            #tmp = tmp.repeat(30,1)
+            #tmp = tmp[:, None, :].repeat(1, 30, 1).reshape(7*30, 7*30, 3)
+            
+            tmp = tmp[None, :, None, :].repeat(30, 1, 30, 1).reshape(30, -1, 3)
+            print(tmp.shape)
+            tmp = tmp.reshape(30, 30*49 , 3)
+            save_image(tmp.permute(2, 0, 1), 'pick_{}.png'.format(i))
+            print(uv_ref[24, 0, :])
+        """
+
+
         n_uv = torch.sum(mask_uv, dim=2)
         loss = self.l1_loss(rgb_ref, rgb_ref_gt)
+
         if torch.sum(n_uv) > 0:
             loss = torch.sum(torch.mean(mask_uv.unsqueeze(-1) * loss, dim=3)) / torch.sum(n_uv) #.mean((2,3))
-            print(loss)
-            return loss
+
+            return loss / 10.
         else:
             loss = torch.sum(mask_uv.unsqueeze(-1) * loss)
-            raise NotImplementedError
-            return loss
+
+            return loss / 10.
 
     def index_images(self, uv, images, image_size):
         self.scale[0] = 1 / image_size[0]
