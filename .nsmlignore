@@ -1,1 +1,5 @@
 eval_out
+visuals
+*.png
+tmp
+logs

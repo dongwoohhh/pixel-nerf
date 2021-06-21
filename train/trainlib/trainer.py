@@ -188,7 +188,7 @@ class Trainer:
                     if batch % self.save_interval == 0 and (epoch > 0 or batch > 0):
                         print("saving")
                         if self.managed_weight_saving:
-                            self.net.save_weights(self.args)
+                            self.net.save_weights(self.args, epoch, batch)
                         else:
                             torch.save(
                                 self.net.state_dict(), self.default_net_state_path
