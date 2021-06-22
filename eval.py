@@ -88,6 +88,12 @@ def extra_args(parser):
         action="store_true",
         help="Set to indicate poses may change between objects. In most of our datasets, the test set has fixed poses.",
     )
+    parser.add_argument(
+        "--eval_epoch",
+        type=str,
+        default="latest",
+        help="Step to stop using bbox sampling",
+    )
     return parser
 
 args, conf = util.args.parse_args(
@@ -245,6 +251,8 @@ with torch.no_grad():
             novel_view_idxs = target_view_mask.nonzero(as_tuple=False).reshape(-1)
 
             poses = poses[target_view_mask]  # (NV[-NS], 4, 4)
+            poses = poses.to(device=device)
+            net.encode_all_poses(poses[None])
 
             all_rays = (
                 util.gen_rays(
@@ -260,10 +268,15 @@ with torch.no_grad():
                 .to(device=device)
             )  # ((NV[-NS])*H*W, 8)
 
+            index_target = torch.arange(0, NV)[target_view_mask].reshape(NV-NS, 1, 1).repeat(1, H, W)
+            index_target = index_target.contiguous().reshape(-1)
+            index_target = index_target.to(device=device)
+
             poses = None
             focal = focal.to(device=device)
 
         rays_spl = torch.split(all_rays, args.ray_batch_size, dim=0)  # Creates views
+        indices_spl = torch.split(index_target, args.ray_batch_size, dim=0)
 
         n_gen_views = len(novel_view_idxs)
 
@@ -275,8 +288,10 @@ with torch.no_grad():
         )
 
         all_rgb, all_depth = [], []
-        for rays in tqdm.tqdm(rays_spl):
-            rgb, depth = render_par(rays[None])
+        for i_split, rays in enumerate(rays_spl):
+            indices = indices_spl[i_split]
+
+            rgb, depth = render_par(rays[None], indices[None], training=False)
             rgb = rgb[0].cpu()
             depth = depth[0].cpu()
             all_rgb.append(rgb)

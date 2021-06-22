@@ -250,7 +250,7 @@ def run_map():
         with open(out_path, "w") as f:
             f.write(out_txt)
 
-    for obj_path, obj_rend_path in tqdm(all_objs):
+    for obj_path, obj_rend_path in all_objs:
         process_obj(obj_path, obj_rend_path)
 
 
@@ -290,7 +290,7 @@ def run_reduce():
 
     should_print_all_objs = len(all_objs) < 100
 
-    for obj_root in tqdm(all_objs):
+    for obj_root in all_objs:
         metrics_path = osp.join(obj_root, "metrics.txt")
         with open(metrics_path, "r") as f:
             metrics = [line.split() for line in f.readlines()]

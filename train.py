@@ -218,6 +218,8 @@ class PixelNeRFTrainer(trainlib.Trainer):
         )
         net.encode_all_poses(all_poses)
         
+        all_bboxes = all_poses = None
+
         render_dict = DotMap(render_par(all_rays, all_index_target, training=True, want_weights=True,))
         coarse = render_dict.coarse
         fine = render_dict.fine
@@ -250,7 +252,7 @@ class PixelNeRFTrainer(trainlib.Trainer):
             loss.backward()
         loss_dict["t"] = loss.item()
 
-        all_bboxes = all_poses = all_images = all_index_target = None
+        all_images = all_index_target = None
 
         return loss_dict
 

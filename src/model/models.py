@@ -249,7 +249,7 @@ class PixelNeRFNet(torch.nn.Module):
                 z_feature_src = z_feature.reshape(SB, NS, B, -1)
                 z_feature_src = z_feature_src.transpose(1, 2).reshape(SB*B, NS, -1)
                 transformer_key = torch.cat((latent_src, z_feature_src), dim=-1)
-
+            """
                 if self.stop_encoder_grad:
                     latent = latent.detach()
                 latent = latent.transpose(1, 2).reshape(
@@ -269,7 +269,6 @@ class PixelNeRFNet(torch.nn.Module):
                 num_repeats = mlp_input.shape[0] // global_latent.shape[0]
                 global_latent = repeat_interleave(global_latent, num_repeats)
                 mlp_input = torch.cat((global_latent, mlp_input), dim=-1)
-
             # Camera frustum culling stuff, currently disabled
             combine_index = None
             dim_size = None
@@ -294,15 +293,17 @@ class PixelNeRFNet(torch.nn.Module):
             mlp_output = mlp_output.reshape(-1, B, self.d_out)
 
             sigma = mlp_output
+            """
             # Run Radiance Transformer network.
             #self.transformer_key = transformer_key
 
             if coarse or self.mlp_fine is None:
-                transformer_output = self.transformer_coarse(query=transformer_query, latent=transformer_key)
+                transformer_output_rgb, transformer_output_sigma = self.transformer_coarse(query=transformer_query, latent=transformer_key)
             else:
-                transformer_output = self.transformer_fine(query=transformer_query, latent=transformer_key)
+                transformer_output_rgb, transformer_output_sigma = self.transformer_fine(query=transformer_query, latent=transformer_key)
             
-            rgb = transformer_output[:, 0].reshape(SB, B, 3)
+            rgb = transformer_output_rgb[:, 0].reshape(SB, B, 3)
+            sigma = transformer_output_sigma.reshape(SB, B, 1)
             
             rgb = torch.sigmoid(rgb)
             sigma = torch.relu(sigma)
@@ -332,11 +333,12 @@ class PixelNeRFNet(torch.nn.Module):
         transformer_query = transformer_query.reshape(B, NR, -1)
 
         if coarse:
-            transformer_output = self.transformer_coarse(query=transformer_query, latent=transformer_key)
+            transformer_output_rgb, _ = self.transformer_coarse(query=transformer_query, latent=transformer_key)
         else:
-            transformer_output = self.transformer_fine(query=transformer_query, latent=transformer_key)
+            transformer_output_rgb, _ = self.transformer_fine(query=transformer_query, latent=transformer_key)
 
-        rgb_ref = transformer_output
+        rgb_ref = transformer_output_rgb
+        rgb_ref = torch.sigmoid(rgb_ref)
 
         return rgb_ref, uv_ref
 
@@ -349,8 +351,13 @@ class PixelNeRFNet(torch.nn.Module):
         # TODO: make backups
         if opt_init and not args.resume:
             return
+        """
         ckpt_name = (
             "pixel_nerf_init" if opt_init or not args.resume else "pixel_nerf_latest"
+        )
+        """
+        ckpt_name = (
+            "pixel_nerf_init" if opt_init or not args.resume else "pixel_nerf_{}".format(args.eval_epoch)
         )
         model_path = "%s/%s/%s" % (args.checkpoints_path, args.name, ckpt_name)
 
@@ -372,15 +379,16 @@ class PixelNeRFNet(torch.nn.Module):
             )
         return self
 
-    def save_weights(self, args, epoch, batch, opt_init=False):
+    def save_weights(self, args, epoch, opt_init=False):
         """
         Helper for saving weights according to argparse arguments
         :param opt_init if true, saves from init checkpoint instead of usual
         """
         from shutil import copyfile
 
-        ckpt_name = "pixel_nerf_init" if opt_init else "pixel_nerf_{:04}_{:04}".format(epoch, batch)
+        ckpt_name = "pixel_nerf_init" if opt_init else "pixel_nerf_{:04}".format(epoch)
         backup_name = "pixel_nerf_init_backup" if opt_init else "pixel_nerf_backup"
+        latest_name = "pixel_nerf_init" if opt_init else "pixel_nerf_latest"
 
         ckpt_path = osp.join(args.checkpoints_path, args.name, ckpt_name)
         ckpt_backup_path = osp.join(args.checkpoints_path, args.name, backup_name)
@@ -388,6 +396,7 @@ class PixelNeRFNet(torch.nn.Module):
         if osp.exists(ckpt_path):
             copyfile(ckpt_path, ckpt_backup_path)
         torch.save(self.state_dict(), ckpt_path)
+        torch.save(self.state_dict(), latest_name)
         return self
 
     

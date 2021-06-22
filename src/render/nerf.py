@@ -66,7 +66,7 @@ class NeRFRenderer(torch.nn.Module):
         n_fine_depth=0,
         noise_std=0.0,
         depth_std=0.01,
-        weights_threshold=0.95,
+        weights_threshold=0.5,
         eval_batch_size=100000,
         white_bkgd=False,
         lindisp=False,
@@ -282,10 +282,11 @@ class NeRFRenderer(torch.nn.Module):
             uv_ref_all = -1 * torch.ones((sb,B*K//sb, NR, 2), device=rgb_final.device)
 
             if self.training:
-                weights_ref = weights.reshape(-1)
-                mask_ref = torch.where(weights_ref > self.weights_threshold, # 0.01,#
-                                       torch.ones_like(weights_ref, device=rgb_final.device),
-                                       torch.zeros_like(weights_ref, device=rgb_final.device))
+                with torch.no_grad():
+                    weights_ref = weights.reshape(-1)
+                    mask_ref = torch.where(weights_ref > self.weights_threshold, # 0.01,#
+                                        torch.ones_like(weights_ref, device=rgb_final.device),
+                                        torch.zeros_like(weights_ref, device=rgb_final.device))
 
                 cond_ref = torch.sum(mask_ref)
                 mask_ref = mask_ref.bool()[:, None]

@@ -17,14 +17,14 @@ class Trainer:
             train_dataset,
             batch_size=args.batch_size,
             shuffle=True,
-            num_workers=8,
+            num_workers=6,
             pin_memory=False,
         )
         self.test_data_loader = torch.utils.data.DataLoader(
             test_dataset,
             batch_size=min(args.batch_size, 16),
             shuffle=True,
-            num_workers=4,
+            num_workers=3,
             pin_memory=False,
         )
 
@@ -188,7 +188,7 @@ class Trainer:
                     if batch % self.save_interval == 0 and (epoch > 0 or batch > 0):
                         print("saving")
                         if self.managed_weight_saving:
-                            self.net.save_weights(self.args, epoch=epoch, batch=batch)
+                            self.net.save_weights(self.args, epoch=epoch)
                         else:
                             torch.save(
                                 self.net.state_dict(), self.default_net_state_path
@@ -201,7 +201,7 @@ class Trainer:
                         torch.save({"iter": step_id + 1}, self.iter_state_path)
                         self.extra_save_state()
                     #if 0:
-                    if batch % self.vis_interval == 0:
+                    if batch % self.vis_interval == 0 and epoch!=0:
                         print("generating visualization")
                         if self.fixed_test:
                             test_data = next(iter(self.test_data_loader))
