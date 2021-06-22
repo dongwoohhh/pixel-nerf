@@ -250,10 +250,10 @@ with torch.no_grad():
 
             novel_view_idxs = target_view_mask.nonzero(as_tuple=False).reshape(-1)
 
-            #poses = poses[target_view_mask]  # (NV[-NS], 4, 4)
-            poses = poses.to(device=device)
-            net.encode_all_poses(poses[None])
-
+            net.encode_all_poses(poses.to(device=device)[None])
+            
+            poses = poses[target_view_mask]  # (NV[-NS], 4, 4)
+            
             all_rays = (
                 util.gen_rays(
                     poses.reshape(-1, 4, 4),
@@ -288,9 +288,6 @@ with torch.no_grad():
         )
 
         all_rgb, all_depth = [], []
-        print(len(rays_spl))
-        print(len(indices_spl))
-        raise NotImplementedError
         for i_split, rays in enumerate(rays_spl):
             indices = indices_spl[i_split]
             print('{} / {}'.format(i_split, len(rays_spl)))
