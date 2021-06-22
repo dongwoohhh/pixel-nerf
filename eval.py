@@ -88,6 +88,11 @@ def extra_args(parser):
         action="store_true",
         help="Set to indicate poses may change between objects. In most of our datasets, the test set has fixed poses.",
     )
+    parser.add_argument(
+        "--eval_epoch",
+        type=str,
+        default="latest",
+    )
     return parser
 
 args, conf = util.args.parse_args(
@@ -275,7 +280,7 @@ with torch.no_grad():
         )
 
         all_rgb, all_depth = [], []
-        for rays in tqdm.tqdm(rays_spl):
+        for rays in rays_spl:
             rgb, depth = render_par(rays[None])
             rgb = rgb[0].cpu()
             depth = depth[0].cpu()

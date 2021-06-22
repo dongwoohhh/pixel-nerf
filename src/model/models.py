@@ -275,7 +275,7 @@ class PixelNeRFNet(torch.nn.Module):
         if opt_init and not args.resume:
             return
         ckpt_name = (
-            "pixel_nerf_init" if opt_init or not args.resume else "pixel_nerf_latest"
+            "pixel_nerf_init" if opt_init or not args.resume else "pixel_nerf_{}".format(args.eval_epoch)
         )
         model_path = "%s/%s/%s" % (args.checkpoints_path, args.name, ckpt_name)
 
