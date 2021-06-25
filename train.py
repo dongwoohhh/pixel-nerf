@@ -53,7 +53,26 @@ def extra_args(parser):
         default=None,
         help="Freeze encoder weights and only train MLP",
     )
+    parser.add_argument(
+        "--max_step",
+        type=int,
+        default=400000,
+        help="Maximum training step",
+    )
+    parser.add_argument(
+        "--no_save_model_step",
+        type=int,
+        default=200000,
+        help="Step to stop using bbox sampling",
+    )
+    parser.add_argument(
+        "--eval_epoch",
+        type=str,
+        default='latest',
+        help="Maximum training step",
+    )
     return parser
+    
     
 
 
