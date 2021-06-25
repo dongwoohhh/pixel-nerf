@@ -53,6 +53,18 @@ def extra_args(parser):
         default=None,
         help="Freeze encoder weights and only train MLP",
     )
+    parser.add_argument(
+        "--max_step",
+        type=int,
+        default=400000,
+        help="Maximum training step",
+    )
+    parser.add_argument(
+        "--no_save_model_step",
+        type=int,
+        default=200000,
+        help="Step to stop using bbox sampling",
+    )
     return parser
     
 
@@ -247,7 +259,7 @@ class PixelNeRFTrainer(trainlib.Trainer):
             rgb_ref_loss = rgb_ref_loss * self.lambda_coarse + fine_ref_loss * self.lambda_fine
             loss_dict["rf_ref"] = fine_ref_loss.item() * self.lambda_fine  
 
-        loss = rgb_loss + rgb_ref_loss
+        loss = rgb_loss #+ rgb_ref_loss
         if is_train:
             loss.backward()
         loss_dict["t"] = loss.item()

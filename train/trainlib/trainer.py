@@ -185,7 +185,7 @@ class Trainer:
                         )
                         print("*** Eval:", "E", epoch, "B", batch, test_loss_str, " lr")
 
-                    if batch % self.save_interval == 0 and (epoch > 0 or batch > 0):
+                    if batch % self.save_interval == 0 and (epoch > 0 or batch > 0) and step_id > self.args.no_save_model_step:
                         print("saving")
                         if self.managed_weight_saving:
                             self.net.save_weights(self.args, epoch=epoch)
@@ -240,5 +240,7 @@ class Trainer:
                     step_id += 1
                     batch += 1
                     progress.update(1)
+                if self.args.max_step < step_id:
+                    break
             if self.lr_scheduler is not None:
                 self.lr_scheduler.step()

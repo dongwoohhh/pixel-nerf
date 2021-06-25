@@ -21,7 +21,7 @@ class SpatialEncoder(nn.Module):
         pretrained=True,
         num_layers=4,
         index_interp="bilinear",
-        index_padding="border",
+        index_padding="zeros",
         upsample_interp="bilinear",
         feature_scale=1.0,
         use_first_pool=True,
