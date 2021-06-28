@@ -185,7 +185,7 @@ class Trainer:
                         )
                         print("*** Eval:", "E", epoch, "B", batch, test_loss_str, " lr")
 
-                    if batch % self.save_interval == 0 and (epoch > 0 or batch > 0) and step_id > self.args.no_save_model_step:
+                    if batch % self.save_interval == 0 and (epoch > 0 or batch > 0):# and step_id > self.args.no_save_model_step:
                         print("saving")
                         if self.managed_weight_saving:
                             self.net.save_weights(self.args, epoch=epoch)

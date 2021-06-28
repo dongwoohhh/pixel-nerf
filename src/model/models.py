@@ -386,9 +386,9 @@ class PixelNeRFNet(torch.nn.Module):
         """
         from shutil import copyfile
 
-        ckpt_name = "pixel_nerf_init" if opt_init else "pixel_nerf_{:04}".format(epoch)
+        #ckpt_name = "pixel_nerf_init" if opt_init else "pixel_nerf_{:04}".format(epoch)
         backup_name = "pixel_nerf_init_backup" if opt_init else "pixel_nerf_backup"
-        latest_name = "pixel_nerf_init" if opt_init else "pixel_nerf_latest"
+        ckpt_name = "pixel_nerf_init" if opt_init else "pixel_nerf_latest"
 
         ckpt_path = osp.join(args.checkpoints_path, args.name, ckpt_name)
         ckpt_backup_path = osp.join(args.checkpoints_path, args.name, backup_name)
@@ -396,7 +396,7 @@ class PixelNeRFNet(torch.nn.Module):
         if osp.exists(ckpt_path):
             copyfile(ckpt_path, ckpt_backup_path)
         torch.save(self.state_dict(), ckpt_path)
-        torch.save(self.state_dict(), latest_name)
+        #torch.save(self.state_dict(), latest_name)
         return self
 
     
