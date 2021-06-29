@@ -168,6 +168,6 @@ class RGBRefLoss(torch.nn.Module):
             images,
             uv,
             align_corners=True, mode='bilinear',
-            padding_mode='border'
+            padding_mode='zeros'
         )
         return samples[:, :, :, 0], mask

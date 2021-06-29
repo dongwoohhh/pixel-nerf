@@ -192,12 +192,6 @@ class PixelNeRFTrainer(trainlib.Trainer):
             
             idx_val = torch.stack([pix_inds//(H*W), pix_inds%(H*W)//(W), pix_inds%W]).T
 
-            """
-            print(idx_val)
-            print(rgb_gt_all[pix_inds][0])
-            print(images[idx_val[0][0], :, idx_val[0][1], idx_val[0][2]] * 0.5 + 0.5)
-            """            
-
             rgb_gt = rgb_gt_all[pix_inds]  # (ray_batch_size, 3)
             rays = cam_rays.view(-1, cam_rays.shape[-1])[pix_inds].to(
                 device=device
