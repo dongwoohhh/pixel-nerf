@@ -110,9 +110,38 @@ class RGBRefLoss(torch.nn.Module):
         self.l1_loss = torch.nn.L1Loss(reduction="none")
         
         self.register_buffer("scale", torch.empty(2, dtype=torch.float32), persistent=False)
-    def forward(self, rgb_ref, uv_ref, images):
-        SB, B, NR, _ = uv_ref.shape
-        _, _, _ , H, W = images.shape
+    def forward(self, rgb_ref, idx_pcloud, color_pcloud, mask_pcloud):
+        SB, B, NR, _ = rgb_ref.shape
+
+        loss = []
+        for i in range(SB):
+            idx_pcloud_i = idx_pcloud[i]
+
+            n_samples = idx_pcloud_i[idx_pcloud_i!=-1].shape[0]
+
+            rgb_ref_i = rgb_ref[i, :n_samples]
+            idx_pcloud_i = idx_pcloud[i, :n_samples].long()
+            
+            rgb_gt_i = color_pcloud[i, :, idx_pcloud_i, :].squeeze(2).transpose(1, 0)
+            mask_gt_i = mask_pcloud[i, :, idx_pcloud_i, :].squeeze(2).transpose(1, 0)
+            
+            mask_sum = torch.sum(mask_gt_i)
+            if mask_sum > 0:
+                loss_i = self.l1_loss(rgb_ref_i, rgb_gt_i)
+                loss_i = torch.mul(loss_i, mask_gt_i)
+                loss_i = torch.sum(loss_i) / (mask_sum * 3)
+            else:
+                loss_i = mask_sum
+
+            loss.append(loss_i)
+
+        loss = torch.stack(loss)
+        loss = torch.mean(loss)
+
+        return loss
+
+
+
 
         image_size = (float(W), float(H))
         uv_ref = uv_ref.transpose(1, 2).reshape(SB*NR, B, 2)

@@ -143,6 +143,8 @@ class PixelNeRFTrainer(trainlib.Trainer):
         all_bboxes = data.get("bbox")  # (SB, NV, 4)  cmin rmin cmax rmax
         all_focals = data["focal"]  # (SB)
         all_c = data.get("c")  # (SB)
+        all_points = data.get("points").to(device=device)
+        all_pcd_data = data.get("pcd_data").to(device=device)
 
         if self.use_bbox and global_step >= args.no_bbox_step:
             self.use_bbox = False
@@ -208,13 +210,15 @@ class PixelNeRFTrainer(trainlib.Trainer):
         all_rays = torch.stack(all_rays)  # (SB, ray_batch_size, 8)
         all_index_target = torch.stack(all_index_target)
 
+        all_pcd_color = all_pcd_data[:, :, :, :3] * 0.5 + 0.5
+        all_pcd_mask = all_pcd_data[:, :, :, 3:]
+
         image_ord = image_ord.to(device)
 
         src_images = util.batched_index_select_nd(
             all_images, image_ord
         )  # (SB, NS, 3, H, W)
         src_poses = util.batched_index_select_nd(all_poses, image_ord)  # (SB, NS, 4, 4)
-
 
         net.encode(
             src_images,
@@ -223,42 +227,47 @@ class PixelNeRFTrainer(trainlib.Trainer):
             c=all_c.to(device=device) if all_c is not None else None,
         )
         net.encode_all_poses(all_poses)
+        net.encode_pointcloud(all_points)
         
-        all_bboxes = all_poses = None
+        all_bboxes = all_poses = all_images = images_0to1 = None
 
         render_dict = DotMap(render_par(all_rays, all_index_target, training=True, want_weights=True,))
+        
+        all_index_target = None
+        
         coarse = render_dict.coarse
         fine = render_dict.fine
         using_fine = len(fine) > 0
+
         """
         for i in range(8):
             print(fine.uv_ref[0, i*20:(i+1)*20, idx_val[i][0], :])
         #raise NotImplementedError
         """
         loss_dict = {}
+
         rgb_loss = self.rgb_coarse_crit(coarse.rgb, all_rgb_gt)
         loss_dict["rc"] = rgb_loss.item() * self.lambda_coarse
 
-        all_images_0to1 = all_images * 0.5 + 0.5        
-        rgb_ref_loss = self.rgb_ref_crit(coarse.rgb_ref, coarse.uv_ref, all_images_0to1)
+        rgb_ref_loss = self.rgb_ref_crit(coarse.rgb_ref, coarse.idx_pcloud, all_pcd_color, all_pcd_mask)
         loss_dict["rc_ref"] = rgb_ref_loss.item() * self.lambda_coarse  
 
-        #loss_dict["rc_ref"] = rgb_ref_loss.item * self.lambda_coarse
         if using_fine:
             fine_loss = self.rgb_fine_crit(fine.rgb, all_rgb_gt)
             rgb_loss = rgb_loss * self.lambda_coarse + fine_loss * self.lambda_fine
             loss_dict["rf"] = fine_loss.item() * self.lambda_fine
 
-            fine_ref_loss = self.rgb_ref_crit(fine.rgb_ref, fine.uv_ref, all_images_0to1)
+            fine_ref_loss = self.rgb_ref_crit(fine.rgb_ref, fine.idx_pcloud, all_pcd_color, all_pcd_mask)
             rgb_ref_loss = rgb_ref_loss * self.lambda_coarse + fine_ref_loss * self.lambda_fine
             loss_dict["rf_ref"] = fine_ref_loss.item() * self.lambda_fine  
+        
 
-        loss = rgb_loss #+ rgb_ref_loss
+        loss = rgb_loss + rgb_ref_loss
         if is_train:
             loss.backward()
         loss_dict["t"] = loss.item()
 
-        all_images = all_index_target = None
+        all_pcd_color = all_pcd_mask = None
 
         return loss_dict
 

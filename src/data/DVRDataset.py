@@ -267,7 +267,7 @@ class DVRDataset(torch.utils.data.Dataset):
 
         # Read pointcloud.        
         if self.pointcloud:
-            n_points_batch = 500000
+            n_points_batch = 200000
 
             pcd_data_dir = os.path.join(root_dir, 'pcd_data.pt')
             points_dir = os.path.join(root_dir, 'points.pt')
@@ -361,8 +361,7 @@ class DVRDataset(torch.utils.data.Dataset):
             n_points = points.shape[0]
             if n_points > n_points_batch:
                 indices = np.random.permutation(n_points)
-                
-                pcd_data = pcd_data[indices[:n_points_batch]]
+                pcd_data = pcd_data[:, indices[:n_points_batch]]
                 points = points[indices[:n_points_batch]]
             else:
                 pcd_zeros = torch.zeros((n_views, n_points_batch-n_points, 4))
