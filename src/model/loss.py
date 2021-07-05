@@ -110,47 +110,22 @@ class RGBRefLoss(torch.nn.Module):
         self.l1_loss = torch.nn.L1Loss(reduction="none")
         
         self.register_buffer("scale", torch.empty(2, dtype=torch.float32), persistent=False)
-    def forward(self, rgb_ref, idx_pcloud, color_pcloud, mask_pcloud):
+    def forward(self, rgb_ref, uv_ref, images, xyz_pcd, mask_pcd):
         SB, B, NR, _ = rgb_ref.shape
-
-        loss = []
-        for i in range(SB):
-            idx_pcloud_i = idx_pcloud[i]
-
-            n_samples = idx_pcloud_i[idx_pcloud_i!=-1].shape[0]
-
-            rgb_ref_i = rgb_ref[i, :n_samples]
-            idx_pcloud_i = idx_pcloud[i, :n_samples].long()
-            
-            rgb_gt_i = color_pcloud[i, :, idx_pcloud_i, :].squeeze(2).transpose(1, 0)
-            mask_gt_i = mask_pcloud[i, :, idx_pcloud_i, :].squeeze(2).transpose(1, 0)
-            
-            mask_sum = torch.sum(mask_gt_i)
-            if mask_sum > 0:
-                loss_i = self.l1_loss(rgb_ref_i, rgb_gt_i)
-                loss_i = torch.mul(loss_i, mask_gt_i)
-                loss_i = torch.sum(loss_i) / (mask_sum * 3)
-            else:
-                loss_i = mask_sum
-
-            loss.append(loss_i)
-
-        loss = torch.stack(loss)
-        loss = torch.mean(loss)
-
-        return loss
-
-
-
-
+        _, _, _ , H, W = images.shape
+        print(rgb_ref.shape, uv_ref.shape, images.shape, xyz_pcd.shape, mask_pcd.shape)
+        raise NotImplementedError
         image_size = (float(W), float(H))
+        print('Need to check this reshape')
         uv_ref = uv_ref.transpose(1, 2).reshape(SB*NR, B, 2)
         images = images.reshape(SB*NR, 3, H, W)
         #weights = weights.reshape(SB, -1)
-        rgb_ref_gt, mask_uv = self.index_images(uv_ref, images, image_size)
+        rgb_ref_gt = self.index_images(uv_ref, images, image_size)
 
         rgb_ref_gt = rgb_ref_gt.reshape(SB, NR, 3, B).permute(0, 3, 1, 2)
-        mask_uv = mask_uv.reshape(SB, NR, B).transpose(1, 2)
+        
+
+
         """
         # For visualize.
         i = random.randint(1, 100)
@@ -189,9 +164,6 @@ class RGBRefLoss(torch.nn.Module):
         epsilon = [1*self.scale[0]*2, 1*self.scale[1]*2]
         
         uv = uv * self.scale * 2 - 1.0
-        mask = torch.where((uv[:, :, 0]> -1.0-epsilon[0]) & (uv[:, :, 0] <=1.0+epsilon[0]) & (uv[:, :, 1]>=-1.0-epsilon[1]) & (uv[:, :, 1]<=1.0+epsilon[1]),
-                            torch.ones_like(uv[:,:, 0]), torch.zeros_like(uv[:,:, 0]))
-        
         uv = uv.unsqueeze(2)
         samples = F.grid_sample(
             images,
@@ -199,4 +171,4 @@ class RGBRefLoss(torch.nn.Module):
             align_corners=True, mode='bilinear',
             padding_mode='zeros'
         )
-        return samples[:, :, :, 0], mask
+        return samples[:, :, :, 0]

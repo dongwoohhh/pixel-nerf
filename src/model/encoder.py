@@ -99,6 +99,8 @@ class SpatialEncoder(nn.Module):
                     uv = uv * scale - 1.0
 
             uv = uv.unsqueeze(2)  # (B, N, 1, 2)
+            print(self.latent.shape, uv.shape)
+            raise NotImplementedError
             samples = F.grid_sample(
                 self.latent,
                 uv,

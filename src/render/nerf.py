@@ -66,7 +66,7 @@ class NeRFRenderer(torch.nn.Module):
         n_fine_depth=0,
         noise_std=0.0,
         depth_std=0.01,
-        weights_threshold=0.9,
+        weights_threshold=0.2,
         eval_batch_size=100000,
         white_bkgd=False,
         lindisp=False,
@@ -194,6 +194,7 @@ class NeRFRenderer(torch.nn.Module):
             rgb_ray_all = []
             sigma_ray_all = []
             rgb_ref_all = []
+            uv_ref_all = []
             transformer_key_all = []
             if sb > 0:
                 points = points.reshape(
@@ -278,25 +279,18 @@ class NeRFRenderer(torch.nn.Module):
 
             NR = model.poses_ref.shape[1]
             rgb_ref_all = torch.zeros((sb,B*K//sb, NR, 3), device=rgb_final.device)
-            idx_pcloud = -1 * torch.ones((sb,B*K//sb, 1), device=rgb_final.device)
+            uv_ref_all = -1 * torch.ones((sb,B*K//sb, NR, 2), device=rgb_final.device)
 
             if self.training:
-                # Change masking by weights to masking by distance from pointcloud.
                 with torch.no_grad():
-                    dist_mat = torch.cdist(model.pcloud, points)
-                    dist_nearest, idx_nearest = torch.topk(dist_mat, k=1, dim=1, largest=False)
-                    dist_nearest_flat = dist_nearest.reshape(-1)
-                    idx_nearest = idx_nearest#.reshape(-1, 1)
+                    weights_ref = weights.reshape(-1)
+                    mask_ref = torch.where(weights_ref > self.weights_threshold, # 0.01,#
+                                        torch.ones_like(weights_ref, device=rgb_final.device),
+                                        torch.zeros_like(weights_ref, device=rgb_final.device))
 
-
-                thr = 0.02
-
-                mask_ref = torch.where(dist_nearest_flat <thr,
-                                       torch.ones_like(dist_nearest_flat, device=dist_nearest_flat.device),
-                                       torch.zeros_like(dist_nearest_flat, device=dist_nearest_flat.device))
-                
                 cond_ref = torch.sum(mask_ref)
                 mask_ref = mask_ref.bool()[:, None]
+                points_ref = torch.masked_select(points.reshape(-1, 3), mask_ref).reshape(-1, 3)
 
                 viewdirs_ref = torch.masked_select(viewdirs.reshape(-1, 3), mask_ref).reshape(-1, 3)
                 index_batch = torch.arange(sb, device=rgb_final.device)[:, None].repeat(1, B*K//sb).reshape(-1, 1)
@@ -305,19 +299,14 @@ class NeRFRenderer(torch.nn.Module):
                 _, _, NV, NC =transformer_key.shape
                 
                 transformer_key_ref = torch.masked_select(transformer_keys.reshape(B*K, -1), mask_ref).reshape(-1, NV, NC)
-                
                 if cond_ref:
-                    rgb_ref = model.forward_ref(viewdirs_ref, index_batch_ref, transformer_key_ref, coarse)                    
+                    rgb_ref, uv_ref = model.forward_ref(points_ref, viewdirs_ref, index_batch_ref, transformer_key_ref, coarse)              
 
                     for i in range(sb):
                         mask_i = torch.eq(index_batch_ref, i)
                         n_batch_i = torch.sum(mask_i.int())
-                        idx_nearest_i = idx_nearest[i, 0]
-                        dist_nearest_i = dist_nearest[i, 0]
                         rgb_ref_all[i, :n_batch_i] = torch.masked_select(rgb_ref.reshape(-1, NR*3), mask_i.unsqueeze(-1)).reshape(n_batch_i, NR, 3)
-                        idx_pcloud[i, :n_batch_i] = idx_nearest_i[dist_nearest_i < thr].reshape(n_batch_i, 1)
-                        #torch.masked_select(idx_nearest, mask_i.unsqueeze(-1)).reshape(n_batch_i, 1)
-                    
+                        uv_ref_all[i, :n_batch_i] = torch.masked_select(uv_ref.reshape(-1, NR*2), mask_i.unsqueeze(-1)).reshape(n_batch_i, NR, 2)
             points = None
             viewdirs = None
             index_target = None
@@ -330,7 +319,7 @@ class NeRFRenderer(torch.nn.Module):
                 rgb_final,
                 depth_final,
                 rgb_ref_all,
-                idx_pcloud,
+                uv_ref_all,
             )
 
     def forward(
@@ -393,16 +382,16 @@ class NeRFRenderer(torch.nn.Module):
     def _format_outputs(
         self, rendered_outputs, superbatch_size, want_weights=False,
     ):
-        weights, rgb, depth, rgb_ref, idx_pcloud = rendered_outputs #mask_ref
+        weights, rgb, depth, rgb_ref, uv_ref = rendered_outputs #mask_ref
 
         if superbatch_size > 0:
             rgb = rgb.reshape(superbatch_size, -1, 3)
             depth = depth.reshape(superbatch_size, -1)
             weights = weights.reshape(superbatch_size, -1, weights.shape[-1])
             rgb_ref = rgb_ref.reshape(superbatch_size, -1, rgb_ref.shape[-2] , 3)
-            idx_pcloud = idx_pcloud.reshape(superbatch_size, -1, 1)
+            uv_ref = uv_ref.reshape(superbatch_size, -1, rgb_ref.shape[-2], 2)
             #mask_ref = mask_ref.reshape(superbatch_size,)
-        ret_dict = DotMap(rgb=rgb, depth=depth, rgb_ref=rgb_ref, idx_pcloud=idx_pcloud)
+        ret_dict = DotMap(rgb=rgb, depth=depth, rgb_ref=rgb_ref, uv_ref=uv_ref)
         if want_weights:
             ret_dict.weights = weights
         return ret_dict

@@ -269,15 +269,17 @@ class DVRDataset(torch.utils.data.Dataset):
         if self.pointcloud:
             n_points_batch = 200000
 
-            pcd_data_dir = os.path.join(root_dir, 'pcd_data.pt')
+            pcd_data_dir = os.path.join(root_dir, 'pcd_mask.pt')
             points_dir = os.path.join(root_dir, 'points.pt')
             n_views, _, height, width = all_imgs.shape
             if os.path.isfile(pcd_data_dir):
+                print('load', pcd_data_dir)
                 pcd_data = torch.load(pcd_data_dir)
                 points = torch.load(points_dir)
             else:
+                print('process', pcd_data_dir)
                 pcd_load = o3d.io.read_point_cloud(os.path.join(root_dir, 'points.ply'))
-                pcd_load = pcd_load.voxel_down_sample(voxel_size=1.0)
+                pcd_load = pcd_load.voxel_down_sample(voxel_size=0.7)
                 
                 points = np.asarray(pcd_load.points)
                 colors_pcd = np.asarray(pcd_load.colors)
@@ -312,13 +314,6 @@ class DVRDataset(torch.utils.data.Dataset):
 
                 uv_normalized = uv*scale * 2 - 1.0
 
-                color = F.grid_sample(
-                    all_imgs,
-                    uv_normalized.unsqueeze(2),
-                    align_corners=True, mode='bilinear',
-                    padding_mode='zeros'
-                )[:, :, :, 0].transpose(2, 1)
-
                 uv_round = torch.round(uv)
                 mask_list = []
                 for i in range(n_views):
@@ -326,32 +321,61 @@ class DVRDataset(torch.utils.data.Dataset):
                     
                     # To use stable sort convert to numpy tensor.
                     uv_i = uv_round[i].numpy()
-                    color_i = color[i].numpy()
                     depth_i = depth[i].numpy()
                     
-                    data_i = np.concatenate([uv_i, color_i, depth_i], axis=1)
-                    
-                    data_i.dtype = [('u', 'float32'), ('v','float32'), ('c1', 'float32'), ('c2', 'float32'), ('c3', 'float32'), ('d', 'float32')]
+                    data_i = np.concatenate([uv_i, depth_i], axis=1)
+
+                    data_i.dtype = [('u', 'float32'), ('v','float32'), ('d', 'float32')]
 
                     idx_sorted = np.argsort(data_i, axis=0, order=('u', 'v', 'd'))[:, 0]
                     idx_original = np.argsort(idx_sorted)
 
                     data_sorted = data_i[idx_sorted]
 
+                    depth_min = data_sorted['d']
+                    
+                    #depth_min = data_sorted[0]['d']
+                    #mask_i = np.zeros((data_sorted.shape[0], 1), np.bool)
+                    depth_min_i = data_sorted[0]['d'] 
+                    depth_min = [depth_min_i]
+                    for i in range(1, data_sorted.shape[0]):
+                        if not  (data_sorted[i]['u'] == data_sorted[i-1]['u'] and data_sorted[i]['v'] == data_sorted[i-1]['v']):
+                            #if data_sorted[i]['d'] < depth_min + 0.01 \
+                            #    and data_sorted[i]['u'] >=0 and data_sorted[i]['u'] < width and data_sorted[i]['v'] >=0 and data_sorted[i]['v'] < height:
+                            #    mask_i[i] = True
+                            #else:
+                            depth_min_i = data_sorted[i]['d']
+                            
+                            #if data_sorted[i]['u'] >=0 and data_sorted[i]['u'] < width and data_sorted[i]['v'] >=0 and data_sorted[i]['v'] < height:
+                            #    mask_i[i] = True
+                        #print(data_sorted[i]['u'], data_sorted[i]['v'], data_sorted[i]['d'], depth_min_i)
+                        depth_min.append(depth_min_i)
+                    depth_min = np.stack(depth_min)
+
+                    #np.set_printoptions(edgeitems=50)
+                    
                     data_sorted_prev = np.roll(data_sorted, shift=1, axis=0)
                     mask_i = (data_sorted['u']>=0) & (data_sorted['u']<width) \
                             & (data_sorted['v']>=0) & (data_sorted['v']<height) \
                             & ((data_sorted['u'] != data_sorted_prev['u']) \
-                            | (data_sorted['v'] != data_sorted_prev['v']))
-
+                               | (data_sorted['v'] != data_sorted_prev['v'])
+                               | (data_sorted['d'] < depth_min + 0.01))
+                    """
+                    np.set_printoptions(edgeitems=100)     
+                    print(data_sorted[800000:800100])
+                    print(mask_i[800000:800100])
+                    raise NotImplementedError
+                    """
                     mask_i = mask_i[idx_original]
                     mask_list.append(mask_i)
                     #pixel_id = data_sor
-                    uv_i = color_i = depth_i = data_i = data_sorted = data_sorted_prev = None
+                    uv_i = depth_i = data_i = data_sorted = data_sorted_prev = None
                 mask = np.stack(mask_list)
                 mask = torch.tensor(mask)
 
-                pcd_data = torch.cat([color, mask], dim=-1)
+                #pcd_data = torch.cat([color, mask], dim=-1)
+                pcd_data = mask
+                print(pcd_data.shape, points.shape)
                 torch.save(pcd_data, pcd_data_dir)    
                 torch.save(points, points_dir)
 
@@ -389,7 +413,7 @@ class DVRDataset(torch.utils.data.Dataset):
             "images": all_imgs,
             "poses": all_poses,
             "points": points,
-            "pcd_data": pcd_data
+            "pcd_mask": pcd_data
         }
 
         if all_masks is not None:

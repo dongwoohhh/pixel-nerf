@@ -90,13 +90,8 @@ class PixelNeRFNet(torch.nn.Module):
 
         # Pose_ref
         self.register_buffer("poses_ref", torch.empty(1, 3, 4), persistent=False)
-        
-        # Pointcloud
-        self.register_buffer("pcloud", torch.empty(1, 1, 3), persistent=False)
-        
         self.num_objs = 0
-        self.num_views_per_obj = 1
-        
+        self.num_views_per_obj = 1        
         """
          # Radiance Transformer
         d_latent_transformer = 128
@@ -316,11 +311,19 @@ class PixelNeRFNet(torch.nn.Module):
 
         return rgb, sigma, transformer_key
 
-    def forward_ref(self, viewdirs, index_batch, transformer_key, coarse):
+    def forward_ref(self, xyz, viewdirs, index_batch, transformer_key, coarse):
         B = viewdirs.shape[0]
         _, NR, _, _ = self.poses_ref.shape
         
         poses_ref = self.poses_ref[index_batch]#batched_index_select_nd(all_poses ,index_batch.reshape(-1, 1))
+
+        xyz_ref = xyz[:, None, :, None].repeat(1, NR, 1, 1)
+        xyz_rot_ref = torch.matmul(poses_ref[:, :, :3, :3], xyz_ref)[..., 0]
+        xyz_ref = xyz_rot_ref + poses_ref[:, :, :3, 3]
+
+        uv_ref = -xyz_ref[:, :, :2] / xyz_ref[:, :, 2:]
+        uv_ref *= self.focal[index_batch].unsqueeze(1).repeat(1, NR, 1)
+        uv_ref += self.c[index_batch].unsqueeze(1).repeat(1, NR, 1)
 
         viewdirs_ref = viewdirs[:, None, :, None].repeat(1, NR, 1, 1)
         viewdirs_ref = torch.matmul(poses_ref[:, :, :3, :3], viewdirs_ref)[..., 0]
@@ -336,7 +339,7 @@ class PixelNeRFNet(torch.nn.Module):
         rgb_ref = transformer_output_rgb
         rgb_ref = torch.sigmoid(rgb_ref)
 
-        return rgb_ref
+        return rgb_ref, uv_ref
 
     def load_weights(self, args, opt_init=False, strict=True, device=None):
         """
