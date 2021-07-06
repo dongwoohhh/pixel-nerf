@@ -70,6 +70,7 @@ nsml run -d video_nfs3 -m 'pointcloud_dataprocess' -e train.py -a "--logs_path /
 
 # pointcloud
 nsml run -d video_nfs3 -m 'Transformer_pcd2_V3' -e train.py -a "--logs_path /data/video_nfs3/dongwool/results_nerf/pixel-nerf/logs --checkpoints_path /data/video_nfs3/dongwool/results_nerf/pixel-nerf/summary --visual_path /data/video_nfs3/dongwool/results_nerf/pixel-nerf/visuals --gpu_id '0 1 2 3 4 5' -D /data/video_nfs3/dongwool/datasets/dtu_dataset/rs_dtu_4 -V 3 -n Transformer_pcd2_V3 -c conf/exp/dtu_nsml.conf --epochs 64" --nfs-output -c 8 -g 6 --shm-size '24G' --gpu-driver-version 420
+nsml run -d video_nfs3 -m 'Transformer_pcd2_V6' -e train.py -a "--logs_path /data/video_nfs3/dongwool/results_nerf/pixel-nerf/logs --checkpoints_path /data/video_nfs3/dongwool/results_nerf/pixel-nerf/summary --visual_path /data/video_nfs3/dongwool/results_nerf/pixel-nerf/visuals --gpu_id '0 1 2 3 4 5' -D /data/video_nfs3/dongwool/datasets/dtu_dataset/rs_dtu_4 -V 3 -n Transformer_pcd2_V6 -c conf/exp/dtu_nsml.conf --epochs 64" --nfs-output -c 8 -g 6 --shm-size '24G' --gpu-driver-version 420
 nsml run -d video_nfs3 -m 'Transformer_pcd2_V3' -e train.py -a "--logs_path /data/video_nfs3/dongwool/results_nerf/pixel-nerf/logs --checkpoints_path /data/video_nfs3/dongwool/results_nerf/pixel-nerf/summary --visual_path /data/video_nfs3/dongwool/results_nerf/pixel-nerf/visuals --gpu_id '0 1' -D /data/video_nfs3/dongwool/datasets/dtu_dataset/rs_dtu_4 -V 3 -n Transformer_pcd2_V3 -c conf/exp/dtu_nsml.conf --epochs 64" --nfs-output -c 8 -g 2 --shm-size '24G' --gpu-driver-version 420
 
 
