@@ -35,7 +35,7 @@ def get_split_dataset(dataset_type, datadir, want_split="all", training=True, po
             # DTU dataset
             #flags["list_prefix"] = "new_overfit_"
             flags["list_prefix"] = "new_"
-            flags["list_prefix"] = "new_all_"
+            #flags["list_prefix"] = "new_all_"
             #flags["list_prefix"] = "SRF_"
             if training:
                 flags["max_imgs"] = 49

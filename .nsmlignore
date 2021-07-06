@@ -1,5 +1,6 @@
 eval_out
 visuals
+debug_pcd
 *.png
 tmp
 logs

@@ -109,12 +109,65 @@ class RGBRefLoss(torch.nn.Module):
         super().__init__()
         self.l1_loss = torch.nn.L1Loss(reduction="none")
         
+        self.thr_dist = 0.02
+
         self.register_buffer("scale", torch.empty(2, dtype=torch.float32), persistent=False)
-    def forward(self, rgb_ref, uv_ref, images, xyz_pcd, mask_pcd):
+    def forward(self, rgb_ref, uv_ref, points_ref, images, xyz_pcd, mask_pcd):
         SB, B, NR, _ = rgb_ref.shape
         _, _, _ , H, W = images.shape
-        print(rgb_ref.shape, uv_ref.shape, images.shape, xyz_pcd.shape, mask_pcd.shape)
-        raise NotImplementedError
+        image_size = (float(W), float(H))
+
+        uv_ref1 = uv_ref.transpose(1, 2).reshape(SB*NR, B, 2)
+        images = images.reshape(SB*NR, 3, H, W)
+
+        rgb_ref_gt, mask_ref = self.index_images(uv_ref1, images, image_size)
+        rgb_ref_gt = rgb_ref_gt.reshape(SB, NR, 3, B).permute(0, 3, 1, 2)
+        mask_ref = mask_ref.reshape(SB, NR, B).transpose(1, 2)
+
+        loss = []
+        for i_sb in range(SB):
+            mask_ref_i = mask_ref[i_sb]
+            #print(torch.sum(mask_ref_i, dim=1))
+            mask_ref_i = torch.gt(torch.sum(mask_ref_i, dim=1), 1)
+                
+            rgb_i = rgb_ref[i_sb, mask_ref_i]
+            rgb_gt_i = rgb_ref_gt[i_sb, mask_ref_i]
+            uv_i = uv_ref[i_sb, mask_ref_i]
+            points_i = points_ref[i_sb, mask_ref_i]
+            
+            xyz_pcd_i = xyz_pcd[i_sb]
+            mask_pcd_i = mask_pcd[i_sb]
+            #print('uv', uv_i)
+            #print('points', points_i)
+            
+            with torch.no_grad():
+                dist_i = torch.cdist(xyz_pcd_i[None], points_i[None])[0]
+                dist_nearest, idx_nearest = torch.topk(dist_i, k=1, dim=0, largest=False)
+                #print('dist_nearest', dist_nearest)
+                mask_dist_i = dist_nearest < self.thr_dist
+                mask_dist_i = mask_dist_i[0].reshape(-1, 1, 1)
+                idx_nearest = idx_nearest[0]
+
+                mask_pcd_i = mask_pcd_i[:, idx_nearest].transpose(0, 1)
+                mask_i = mask_pcd_i * mask_dist_i
+            #raise NotImplementedError
+            loss_i = self.l1_loss(rgb_i, rgb_gt_i)
+            if torch.sum(mask_i) > 0:
+                loss_i = torch.sum(loss_i * mask_i) / (3*torch.sum(mask_i))
+            else:
+                loss_i = torch.sum(loss_i * mask_i)
+            loss.append(loss_i)
+        
+        loss = torch.stack(loss)
+        loss = 0.1 * loss.mean()
+
+        return loss
+
+            
+
+
+
+
         image_size = (float(W), float(H))
         print('Need to check this reshape')
         uv_ref = uv_ref.transpose(1, 2).reshape(SB*NR, B, 2)
@@ -164,6 +217,8 @@ class RGBRefLoss(torch.nn.Module):
         epsilon = [1*self.scale[0]*2, 1*self.scale[1]*2]
         
         uv = uv * self.scale * 2 - 1.0
+        mask = torch.where((uv[:, :, 0]> -1.0-epsilon[0]) & (uv[:, :, 0] <=1.0+epsilon[0]) & (uv[:, :, 1]>=-1.0-epsilon[1]) & (uv[:, :, 1]<=1.0+epsilon[1]),
+                            torch.ones_like(uv[:,:, 0]), torch.zeros_like(uv[:,:, 0]))
         uv = uv.unsqueeze(2)
         samples = F.grid_sample(
             images,
@@ -171,4 +226,4 @@ class RGBRefLoss(torch.nn.Module):
             align_corners=True, mode='bilinear',
             padding_mode='zeros'
         )
-        return samples[:, :, :, 0]
+        return samples[:, :, :, 0], mask

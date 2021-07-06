@@ -273,11 +273,11 @@ class DVRDataset(torch.utils.data.Dataset):
             points_dir = os.path.join(root_dir, 'points.pt')
             n_views, _, height, width = all_imgs.shape
             if os.path.isfile(pcd_data_dir):
-                print('load', pcd_data_dir)
+                #print('load', pcd_data_dir)
                 pcd_data = torch.load(pcd_data_dir)
                 points = torch.load(points_dir)
             else:
-                print('process', pcd_data_dir)
+                #print('process', pcd_data_dir)
                 pcd_load = o3d.io.read_point_cloud(os.path.join(root_dir, 'points.ply'))
                 pcd_load = pcd_load.voxel_down_sample(voxel_size=0.7)
                 
