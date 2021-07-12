@@ -7,7 +7,7 @@ from .SRNDataset import SRNDataset
 from .data_util import ColorJitterDataset
 
 
-def get_split_dataset(dataset_type, datadir, want_split="all", training=True, pointcloud=False, **kwargs):
+def get_split_dataset(dataset_type, datadir, split_name, want_split="all", training=True, pointcloud=False, **kwargs):
     """
     Retrieved desired dataset class
     :param dataset_type dataset type name (srn|dvr|dvr_gen, etc)
@@ -34,7 +34,7 @@ def get_split_dataset(dataset_type, datadir, want_split="all", training=True, po
         elif dataset_type == "dvr_dtu":
             # DTU dataset
             #flags["list_prefix"] = "new_overfit_"
-            flags["list_prefix"] = "new_"
+            flags["list_prefix"] = split_name+'_'
             #flags["list_prefix"] = "new_all_"
             #flags["list_prefix"] = "SRF_"
             if training:

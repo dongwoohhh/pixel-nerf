@@ -54,6 +54,12 @@ def extra_args(parser):
         help="Freeze encoder weights and only train MLP",
     )
     parser.add_argument(
+        "--use_color_ref",
+        action="store_true",
+        default=None,
+        help="Use color ref loss",
+    )
+    parser.add_argument(
         "--max_step",
         type=int,
         default=400000,
@@ -72,7 +78,7 @@ def extra_args(parser):
 args, conf = util.args.parse_args(extra_args, training=True, default_ray_batch_size=128)
 device = util.get_cuda(args.gpu_id[0])
 
-dset, val_dset, _ = get_split_dataset(args.dataset_format, args.datadir, pointcloud=True)
+dset, val_dset, _ = get_split_dataset(args.dataset_format, args.datadir, args.split_name, pointcloud=True)
 print(
     "dset z_near {}, z_far {}, lindisp {}".format(dset.z_near, dset.z_far, dset.lindisp)
 )
@@ -247,9 +253,13 @@ class PixelNeRFTrainer(trainlib.Trainer):
 
             fine_ref_loss = self.rgb_ref_crit(fine.rgb_ref, fine.uv_ref, fine.points_ref, all_images_0to1, all_points, all_pcd_mask)
             rgb_ref_loss = rgb_ref_loss * self.lambda_coarse + fine_ref_loss * self.lambda_fine
-            loss_dict["rf_ref"] = fine_ref_loss.item() * self.lambda_fine  
-        
-        loss = rgb_loss + rgb_ref_loss
+            loss_dict["rf_ref"] = fine_ref_loss.item() * self.lambda_fine          
+
+        if args.use_color_ref:
+            loss = rgb_loss + rgb_ref_loss
+        else:
+            loss = rgb_loss
+
         if is_train:
             loss.backward()
         loss_dict["t"] = loss.item()
