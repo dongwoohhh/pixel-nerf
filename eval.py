@@ -107,7 +107,7 @@ dset = get_split_dataset(
     args.dataset_format, args.datadir, args.split_name, want_split=args.split, training=False,  pointcloud=True
 )
 data_loader = torch.utils.data.DataLoader(
-    dset, batch_size=1, shuffle=False, num_workers=8, pin_memory=False
+    dset, batch_size=1, shuffle=False, num_workers=8, pin_memory=False, 
 )
 
 output_dir = args.output.strip()
