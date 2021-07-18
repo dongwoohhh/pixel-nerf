@@ -23,6 +23,9 @@ class RadianceTransformer2(nn.Module):
 
         self.n_layer = n_layer
         self.layers = []
+        # Cls token for sigma prediction.
+        self.cls_token = nn.Parameter(torch.zeros(1, 1, n_dim))
+        
         # Linear Input latent projection
         self.linear1 = nn.Linear(d_k, n_dim)
 
@@ -38,13 +41,19 @@ class RadianceTransformer2(nn.Module):
 
     def forward(self, query, latent):
         out = self.linear1(latent)
+        cls_token = self.cls_token.repeat(out.shape[0], 1, 1)
+        out = torch.cat([cls_token, out], dim=1)
+        
+        # out = torch.cat
         for layer in self.layers:
             out = layer(out)
-
-        sigma = torch.max(out, dim = 1)[0]
-        sigma = self.layer_sigma(sigma)
-        out = self.attn_from_ref_to_src(query=query, key=out, value=out)
-
+        out_token = out[:, 0, :]
+        out_latent = out[:, 1:, :]
+        
+        #sigma = torch.max(out, dim = 1)[0]
+        #sigma = self.layer_sigma(sigma)
+        sigma = self.layer_sigma(out_token)
+        out = self.attn_from_ref_to_src(query=query, key=out_latent, value=out_latent)
         color = self.layer_color(out)
 
         return color, sigma
