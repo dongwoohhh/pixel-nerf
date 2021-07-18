@@ -73,10 +73,12 @@ class PixelNeRFNet(torch.nn.Module):
         d_out = 1
 
         self.latent_size = self.encoder.latent_size
+        """
         self.mlp_coarse = make_mlp(conf["mlp_coarse"], d_in, d_latent, d_out=d_out)
         self.mlp_fine = make_mlp(
             conf["mlp_fine"], d_in, d_latent, d_out=d_out, allow_empty=True
         )
+        """
         # Note: this is world -> camera, and bottom row is omitted
         self.register_buffer("poses", torch.empty(1, 3, 4), persistent=False)
         self.register_buffer("image_shape", torch.empty(2), persistent=False)
@@ -296,10 +298,10 @@ class PixelNeRFNet(torch.nn.Module):
             """
             # Run Radiance Transformer network.
             #self.transformer_key = transformer_key
-            if coarse or self.mlp_fine is None:
-                transformer_output_rgb, transformer_output_sigma = self.transformer_coarse(query=transformer_query, latent=transformer_key)
+            if coarse:
+                transformer_output_rgb, transformer_output_sigma, transformer_latent = self.transformer_coarse(query=transformer_query, latent=transformer_key)
             else:
-                transformer_output_rgb, transformer_output_sigma = self.transformer_fine(query=transformer_query, latent=transformer_key)
+                transformer_output_rgb, transformer_output_sigma, transformer_latent = self.transformer_fine(query=transformer_query, latent=transformer_key)
             
             rgb = transformer_output_rgb[:, 0].reshape(SB, B, 3)
             sigma = transformer_output_sigma.reshape(SB, B, 1)
@@ -307,11 +309,12 @@ class PixelNeRFNet(torch.nn.Module):
             rgb = torch.sigmoid(rgb)
             sigma = torch.relu(sigma)
 
-            transformer_key = transformer_key.reshape(SB, B, NS, -1)
+            #transformer_key = transformer_key.reshape(SB, B, NS, -1)
+            transformer_latent = transformer_latent.reshape(SB, B, NS, -1)
 
-        return rgb, sigma, transformer_key
+        return rgb, sigma, transformer_latent
 
-    def forward_ref(self, xyz, viewdirs, index_batch, transformer_key, coarse):
+    def forward_ref(self, xyz, viewdirs, index_batch, transformer_latent, coarse):
         B = viewdirs.shape[0]
         _, NR, _, _ = self.poses_ref.shape
         
@@ -332,9 +335,17 @@ class PixelNeRFNet(torch.nn.Module):
         transformer_query = transformer_query.reshape(B, NR, -1)
 
         if coarse:
-            transformer_output_rgb, _ = self.transformer_coarse(query=transformer_query, latent=transformer_key)
+            #transformer_output_rgb, _ = self.transformer_coarse(query=transformer_query, latent=transformer_key)
+            transformer_output_rgb = \
+                self.transformer_coarse.forward_attention_to_source(query=transformer_query, 
+                                                                    key=transformer_latent,
+                                                                    value=transformer_latent)
         else:
-            transformer_output_rgb, _ = self.transformer_fine(query=transformer_query, latent=transformer_key)
+            #transformer_output_rgb, _ = self.transformer_fine(query=transformer_query, latent=transformer_key)
+            transformer_output_rgb = \
+                self.transformer_fine.forward_attention_to_source(query=transformer_query, 
+                                                                  key=transformer_latent,
+                                                                  value=transformer_latent)
 
         rgb_ref = transformer_output_rgb
         rgb_ref = torch.sigmoid(rgb_ref)
@@ -391,11 +402,12 @@ class PixelNeRFNet(torch.nn.Module):
 
         ckpt_path = osp.join(args.checkpoints_path, args.name, ckpt_name)
         ckpt_backup_path = osp.join(args.checkpoints_path, args.name, backup_name)
+        latest_path = osp.join(args.checkpoints_path, args.name, latest_name)
 
         if osp.exists(ckpt_path):
             copyfile(ckpt_path, ckpt_backup_path)
         torch.save(self.state_dict(), ckpt_path)
-        torch.save(self.state_dict(), latest_name)
+        torch.save(self.state_dict(), latest_path)
         return self
 
     

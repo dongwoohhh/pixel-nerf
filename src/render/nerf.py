@@ -195,7 +195,7 @@ class NeRFRenderer(torch.nn.Module):
             sigma_ray_all = []
             rgb_ref_all = []
             uv_ref_all = []
-            transformer_key_all = []
+            transformer_latent_all = []
             if sb > 0:
                 points = points.reshape(
                     sb, -1, 3
@@ -224,13 +224,13 @@ class NeRFRenderer(torch.nn.Module):
                     #output_ray, rgb_ref = model(pnts, indices, coarse=coarse, viewdirs=dirs)
                     #val_all.append(output_ray)
                     
-                    rgb_ray, sigma_ray, transformer_key = model(pnts, indices, coarse=coarse, viewdirs=dirs)
+                    rgb_ray, sigma_ray, transformer_latent = model(pnts, indices, coarse=coarse, viewdirs=dirs)
                     rgb_ray_all.append(rgb_ray)
                     sigma_ray_all.append(sigma_ray)
                     if self.training:
-                        transformer_key_all.append(transformer_key)
+                        transformer_latent_all.append(transformer_latent)
                     else:
-                        del transformer_key
+                        del transformer_latent
                     """
                     rgb_ray, sigma_ray, rgb_ref, uv_ref = model(pnts, indices, coarse=coarse, viewdirs=dirs)
                     rgb_ray_all.append(rgb_ray)
@@ -242,10 +242,8 @@ class NeRFRenderer(torch.nn.Module):
                 for pnts in split_points:
                     val_all.append(model(pnts, index_target, coarse=coarse))
             if self.training:
-                transformer_keys = torch.cat(transformer_key_all, dim=eval_batch_dim)
+                transformer_latents = torch.cat(transformer_latent_all, dim=eval_batch_dim)
 
-            #print(transformer_keys.shape)
-            
             # (B*K, 4) OR (SB, B'*K, 4)
             rgbs = torch.cat(rgb_ray_all, dim=eval_batch_dim)
             sigmas = torch.cat(sigma_ray_all, dim=eval_batch_dim)
@@ -296,11 +294,12 @@ class NeRFRenderer(torch.nn.Module):
                 index_batch = torch.arange(sb, device=rgb_final.device)[:, None].repeat(1, B*K//sb).reshape(-1, 1)
                 index_batch_ref = torch.masked_select(index_batch, mask_ref)
 
-                _, _, NV, NC =transformer_key.shape
+                _, _, NV, NC =transformer_latents.shape
                 
-                transformer_key_ref = torch.masked_select(transformer_keys.reshape(B*K, -1), mask_ref).reshape(-1, NV, NC)
+                transformer_latents_ref = torch.masked_select(transformer_latents.reshape(B*K, -1), mask_ref).reshape(-1, NV, NC)
+
                 if cond_ref:
-                    rgb_ref, uv_ref = model.forward_ref(points_ref, viewdirs_ref, index_batch_ref, transformer_key_ref, coarse)              
+                    rgb_ref, uv_ref = model.forward_ref(points_ref, viewdirs_ref, index_batch_ref, transformer_latents_ref, coarse)              
                     for i in range(sb):
                         mask_i = torch.eq(index_batch_ref, i)
                         n_batch_i = torch.sum(mask_i.int())

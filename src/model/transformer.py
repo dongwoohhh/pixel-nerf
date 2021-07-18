@@ -25,10 +25,9 @@ class RadianceTransformer2(nn.Module):
         self.layers = []
         # Cls token for sigma prediction.
         self.cls_token = nn.Parameter(torch.zeros(1, 1, n_dim))
-        
+        nn.init.normal_(self.cls_token, std=0.02)
         # Linear Input latent projection
         self.linear1 = nn.Linear(d_k, n_dim)
-
         # Transformer for self-attention of src latent vector.
         for i in range(n_layer):
                 self.layers.append(TransformerEncoderLayer(n_dim, n_head))
@@ -43,20 +42,26 @@ class RadianceTransformer2(nn.Module):
         out = self.linear1(latent)
         cls_token = self.cls_token.repeat(out.shape[0], 1, 1)
         out = torch.cat([cls_token, out], dim=1)
-        
         # out = torch.cat
         for layer in self.layers:
             out = layer(out)
         out_token = out[:, 0, :]
         out_latent = out[:, 1:, :]
-        
+
         #sigma = torch.max(out, dim = 1)[0]
         #sigma = self.layer_sigma(sigma)
         sigma = self.layer_sigma(out_token)
-        out = self.attn_from_ref_to_src(query=query, key=out_latent, value=out_latent)
+        #out = self.attn_from_ref_to_src(query=query, key=out_latent, value=out_latent)
+        #color = self.layer_color(out)
+        color = self.forward_attention_to_source(query=query, key=out_latent, value=out_latent)
+
+        return color, sigma, out_latent
+
+    def forward_attention_to_source(self, query, key, value):
+        out = self.attn_from_ref_to_src(query, key, value)
         color = self.layer_color(out)
 
-        return color, sigma
+        return color
 
 
 class RadianceTransformer(nn.Module):
