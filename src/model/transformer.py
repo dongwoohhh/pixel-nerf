@@ -47,6 +47,8 @@ class RadianceTransformer2(nn.Module):
         nn.init.constant_(self.layer_sigma.bias, 0.0)
         nn.init.kaiming_normal_(self.layer_sigma.weight, a=0, mode="fan_in")
 
+        self.activation = nn.ReLU()
+
     def forward(self, query, latent):
         out = self.linear1(latent)
         cls_token = self.cls_token.repeat(out.shape[0], 1, 1)
@@ -59,7 +61,7 @@ class RadianceTransformer2(nn.Module):
 
         #sigma = torch.max(out, dim = 1)[0]
         #sigma = self.layer_sigma(sigma)
-        sigma = self.layer_sigma(out_token)
+        sigma = self.layer_sigma(self.activation(out_token))
         #out = self.attn_from_ref_to_src(query=query, key=out_latent, value=out_latent)
         #color = self.layer_color(out)
         color = self.forward_attention_to_source(query=query, key=out_latent, value=out_latent)
@@ -68,7 +70,7 @@ class RadianceTransformer2(nn.Module):
 
     def forward_attention_to_source(self, query, key, value):
         out = self.attn_from_ref_to_src(query, key, value)
-        color = self.layer_color(out)
+        color = self.layer_color(self.activation(out))
 
         return color
 

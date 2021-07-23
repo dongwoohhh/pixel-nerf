@@ -163,11 +163,6 @@ class RGBRefLoss(torch.nn.Module):
 
         return loss
 
-            
-
-
-
-
         image_size = (float(W), float(H))
         print('Need to check this reshape')
         uv_ref = uv_ref.transpose(1, 2).reshape(SB*NR, B, 2)
