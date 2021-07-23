@@ -4,7 +4,7 @@ Main model implementation
 from numpy.core.fromnumeric import repeat
 import torch
 from .encoder import ImageEncoder
-from .transformer import RadianceTransformer, RadianceTransformer2
+from .transformer import RadianceTransformer2
 from .code import PositionalEncoding
 from .model_util import make_encoder, make_mlp
 import torch.autograd.profiler as profiler
