@@ -65,8 +65,8 @@ class NeRFRenderer(torch.nn.Module):
         n_fine=0,
         n_fine_depth=0,
         noise_std=0.0,
-        depth_std=0.01,
-        weights_threshold=0.3,
+        depth_std=0.3,
+        weights_threshold=0.0003,
         eval_batch_size=100000,
         white_bkgd=False,
         lindisp=False,
@@ -196,6 +196,7 @@ class NeRFRenderer(torch.nn.Module):
             rgb_ref_all = []
             uv_ref_all = []
             transformer_latent_all = []
+            transformer_attn_prob_all = []
             if sb > 0:
                 points = points.reshape(
                     sb, -1, 3
@@ -224,13 +225,14 @@ class NeRFRenderer(torch.nn.Module):
                     #output_ray, rgb_ref = model(pnts, indices, coarse=coarse, viewdirs=dirs)
                     #val_all.append(output_ray)
                     
-                    rgb_ray, sigma_ray, transformer_latent = model(pnts, indices, coarse=coarse, viewdirs=dirs)
+                    rgb_ray, sigma_ray, transformer_latent, transformer_attn_prob = model(pnts, indices, coarse=coarse, viewdirs=dirs)
                     rgb_ray_all.append(rgb_ray)
                     sigma_ray_all.append(sigma_ray)
                     if self.training:
                         transformer_latent_all.append(transformer_latent)
                     else:
                         del transformer_latent
+                    transformer_attn_prob_all.append(transformer_attn_prob)
                     """
                     rgb_ray, sigma_ray, rgb_ref, uv_ref = model(pnts, indices, coarse=coarse, viewdirs=dirs)
                     rgb_ray_all.append(rgb_ray)
@@ -243,6 +245,7 @@ class NeRFRenderer(torch.nn.Module):
                     val_all.append(model(pnts, index_target, coarse=coarse))
             if self.training:
                 transformer_latents = torch.cat(transformer_latent_all, dim=eval_batch_dim)
+            transformer_attn_probs = torch.cat(transformer_attn_prob_all, dim=eval_batch_dim)
 
             # (B*K, 4) OR (SB, B'*K, 4)
             rgbs = torch.cat(rgb_ray_all, dim=eval_batch_dim)
@@ -276,9 +279,13 @@ class NeRFRenderer(torch.nn.Module):
             depth_final = torch.sum(weights * z_samp, -1)  # (B)
 
             NR = model.poses_ref.shape[1]
+            _, _, NL, NH, NS, NS = transformer_attn_probs.shape
+
             rgb_ref_all = torch.zeros((sb,B*K//sb, NR, 3), device=rgb_final.device)
             uv_ref_all = -1 * torch.ones((sb,B*K//sb, NR, 2), device=rgb_final.device)
             points_ref_all = torch.zeros((sb,B*K//sb, 3), device=rgb_final.device)
+            attn_prob_all = torch.zeros((sb,B*K//sb, NL, NH, NS, NS), device=rgb_final.device)
+
             if self.training:
                 with torch.no_grad():
                     weights_ref = weights.reshape(-1)
@@ -294,9 +301,11 @@ class NeRFRenderer(torch.nn.Module):
                 index_batch = torch.arange(sb, device=rgb_final.device)[:, None].repeat(1, B*K//sb).reshape(-1, 1)
                 index_batch_ref = torch.masked_select(index_batch, mask_ref)
 
-                _, _, NV, NC =transformer_latents.shape
+                _, _, NV, NC = transformer_latents.shape
                 
+
                 transformer_latents_ref = torch.masked_select(transformer_latents.reshape(B*K, -1), mask_ref).reshape(-1, NV, NC)
+                transformer_attn_probs_ref = torch.masked_select(transformer_attn_probs.reshape(B*K, -1), mask_ref).reshape(-1, NL*NH*NS*NS)
 
                 if cond_ref:
                     rgb_ref, uv_ref = model.forward_ref(points_ref, viewdirs_ref, index_batch_ref, transformer_latents_ref, coarse)              
@@ -306,6 +315,8 @@ class NeRFRenderer(torch.nn.Module):
                         rgb_ref_all[i, :n_batch_i] = torch.masked_select(rgb_ref.reshape(-1, NR*3), mask_i.unsqueeze(-1)).reshape(n_batch_i, NR, 3)
                         uv_ref_all[i, :n_batch_i] = torch.masked_select(uv_ref.reshape(-1, NR*2), mask_i.unsqueeze(-1)).reshape(n_batch_i, NR, 2)
                         points_ref_all[i, :n_batch_i] = torch.masked_select(points_ref, mask_i.unsqueeze(-1)).reshape(n_batch_i, 3)
+                        attn_prob_all[i, :n_batch_i] = torch.masked_select(transformer_attn_probs_ref, mask_i.unsqueeze(-1)).reshape(n_batch_i, NL, NH, NS, NS)
+
             points = None
             viewdirs = None
             index_target = None
@@ -319,7 +330,8 @@ class NeRFRenderer(torch.nn.Module):
                 depth_final,
                 rgb_ref_all,
                 uv_ref_all,
-                points_ref_all
+                points_ref_all,
+                attn_prob_all,
             )
 
     def forward(
@@ -382,7 +394,7 @@ class NeRFRenderer(torch.nn.Module):
     def _format_outputs(
         self, rendered_outputs, superbatch_size, want_weights=False,
     ):
-        weights, rgb, depth, rgb_ref, uv_ref, points_ref = rendered_outputs #mask_ref
+        weights, rgb, depth, rgb_ref, uv_ref, points_ref, attn_prob = rendered_outputs #mask_ref
 
         if superbatch_size > 0:
             rgb = rgb.reshape(superbatch_size, -1, 3)
@@ -392,8 +404,7 @@ class NeRFRenderer(torch.nn.Module):
             uv_ref = uv_ref.reshape(superbatch_size, -1, rgb_ref.shape[-2], 2)
             points_ref = points_ref.reshape(superbatch_size, -1, 3)
 
-            #mask_ref = mask_ref.reshape(superbatch_size,)
-        ret_dict = DotMap(rgb=rgb, depth=depth, rgb_ref=rgb_ref, uv_ref=uv_ref, points_ref=points_ref)
+        ret_dict = DotMap(rgb=rgb, depth=depth, rgb_ref=rgb_ref, uv_ref=uv_ref, points_ref=points_ref, attn_prob=attn_prob)
         if want_weights:
             ret_dict.weights = weights
         return ret_dict

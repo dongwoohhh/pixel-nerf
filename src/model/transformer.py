@@ -52,12 +52,16 @@ class RadianceTransformer2(nn.Module):
     def forward(self, query, latent):
         out = self.linear1(latent)
         cls_token = self.cls_token.repeat(out.shape[0], 1, 1)
-        out = torch.cat([cls_token, out], dim=1)
-        # out = torch.cat
+        out = torch.cat([out, cls_token], dim=1)
+
+        attn_prob_list = []
         for layer in self.layers:
             out = layer(out)
-        out_token = out[:, 0, :]
-        out_latent = out[:, 1:, :]
+            attn_prob_list.append(layer.multi_head_attention_layer.attention_prob)
+        attn_prob_list = torch.stack(attn_prob_list, dim=1)
+
+        out_token = out[:, -1, :]
+        out_latent = out[:, :-1, :]
 
         #sigma = torch.max(out, dim = 1)[0]
         #sigma = self.layer_sigma(sigma)
@@ -66,7 +70,7 @@ class RadianceTransformer2(nn.Module):
         #color = self.layer_color(out)
         color = self.forward_attention_to_source(query=query, key=out_latent, value=out_latent)
 
-        return color, sigma, out_latent
+        return color, sigma, out_latent, attn_prob_list
 
     def forward_attention_to_source(self, query, key, value):
         out = self.attn_from_ref_to_src(query, key, value)
@@ -149,8 +153,8 @@ class MultiHeadAttentionLayer(nn.Module):
         attention_score = torch.matmul(query, key.transpose(-2, -1))  # Q x K.T
         attention_score = attention_score / math.sqrt(n_dim_key)
 
-        attention_prob = F.softmax(attention_score, dim=-1)  # (B, N_ref, N_src)
-        out = torch.matmul(attention_prob, value)  # (B, N_ref, D)
+        self.attention_prob = F.softmax(attention_score, dim=-1)  # (B, N_ref, N_src)
+        out = torch.matmul(self.attention_prob, value)  # (B, N_ref, D)
 
         return out
 

@@ -108,13 +108,15 @@ class RGBRefLoss(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.l1_loss = torch.nn.L1Loss(reduction="none")
-        
+        self.bce_loss = torch.nn.BCELoss(reduction="none")
         self.thr_dist = 0.01
 
         self.register_buffer("scale", torch.empty(2, dtype=torch.float32), persistent=False)
-    def forward(self, rgb_ref, uv_ref, points_ref, images, xyz_pcd, mask_pcd):
+    def forward(self, rgb_ref, uv_ref, points_ref, attn_prob, idx_src, images, xyz_pcd, mask_pcd):
         SB, B, NR, _ = rgb_ref.shape
         _, _, _ , H, W = images.shape
+        _, NS = idx_src.shape
+        _, _, NL, NH, _, _ = attn_prob.shape
         image_size = (float(W), float(H))
 
         uv_ref1 = uv_ref.transpose(1, 2).reshape(SB*NR, B, 2)
@@ -125,6 +127,7 @@ class RGBRefLoss(torch.nn.Module):
         mask_ref = mask_ref.reshape(SB, NR, B).transpose(1, 2)
 
         loss = []
+        loss_attn_prob = []
         for i_sb in range(SB):
             mask_ref_i = mask_ref[i_sb]
             #print(torch.sum(mask_ref_i, dim=1))
@@ -134,7 +137,9 @@ class RGBRefLoss(torch.nn.Module):
             rgb_gt_i = rgb_ref_gt[i_sb, mask_ref_i]
             uv_i = uv_ref[i_sb, mask_ref_i]
             points_i = points_ref[i_sb, mask_ref_i]
-            
+            attn_prob_i = attn_prob[i_sb, mask_ref_i, :, :, :-1, :-1]
+            idx_src_i = idx_src[i_sb]
+
             xyz_pcd_i = xyz_pcd[i_sb]
             mask_pcd_i = mask_pcd[i_sb]
             #print('uv', uv_i)
@@ -148,20 +153,44 @@ class RGBRefLoss(torch.nn.Module):
                 mask_dist_i = mask_dist_i[0].reshape(-1, 1, 1)
                 idx_nearest = idx_nearest[0]
 
-                mask_pcd_i = mask_pcd_i[:, idx_nearest].transpose(0, 1)
+                mask_pcd_i = mask_pcd_i[:, idx_nearest].transpose(0, 1)                
+                mask_src_i = mask_pcd_i[:, idx_src_i]
+                mask_src_i = torch.logical_not(mask_src_i)
+
                 mask_i = mask_pcd_i * mask_dist_i
-            #raise NotImplementedError
+                mask_src_i = mask_src_i * mask_dist_i
+                mask_src_i = mask_src_i.squeeze(-1)[:, None, None, None, :]
+                mask_src_i = mask_src_i.repeat(1, NL, NH, NS, 1)
+            # need mask for token.
+            #print(attn_prob_i.shape)
+            #print(mask_src_i.shape)
+            #print(mask_src_i[0, 0, 0, :, :])
+
+            labels_zero = torch.zeros_like(attn_prob_i)
+
             loss_i = self.l1_loss(rgb_i, rgb_gt_i)
+            loss_attn_i = self.bce_loss(attn_prob_i, labels_zero)
+
             if torch.sum(mask_i) > 0:
                 loss_i = torch.sum(loss_i * mask_i) / (3*torch.sum(mask_i))
             else:
                 loss_i = torch.sum(loss_i * mask_i)
-            loss.append(loss_i)
-        
-        loss = torch.stack(loss)
-        loss = 0.1 * loss.mean()
 
-        return loss
+            if torch.sum(mask_src_i) > 0:
+                loss_attn_i = torch.sum(loss_attn_i * mask_src_i) / torch.sum(mask_src_i)
+            else:
+                loss_attn_i = torch.sum(loss_attn_i * mask_src_i)
+
+            loss.append(loss_i)
+            loss_attn_prob.append(loss_attn_i)
+        
+        loss_rgb_ref = torch.stack(loss)
+        loss_rgb_ref = 0.1 * loss_rgb_ref.mean()
+
+        loss_attn_prob = torch.stack(loss_attn_prob)
+        loss_attn_prob = loss_attn_prob.mean()
+
+        return loss_rgb_ref, loss_attn_prob
 
         image_size = (float(W), float(H))
         print('Need to check this reshape')

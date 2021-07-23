@@ -102,11 +102,13 @@ class PixelNeRFNet(torch.nn.Module):
         self.transformer_fine = RadianceTransformer(d_q=self.code.d_out, d_k=d_latent+d_in,
             n_dim=d_latent_transformer, n_head=1, n_layer=1)
         """
+        self.n_head = 4
+        self.n_layer = 4
         d_latent_transformer = 256
         self.transformer_coarse = RadianceTransformer2(d_q=self.code.d_out, d_k=d_latent+d_in,
-            n_dim=d_latent_transformer, n_head=4, n_layer=4)
+            n_dim=d_latent_transformer, n_head=self.n_head, n_layer=self.n_layer)
         self.transformer_fine = RadianceTransformer2(d_q=self.code.d_out, d_k=d_latent+d_in,
-            n_dim=d_latent_transformer, n_head=4, n_layer=4)
+            n_dim=d_latent_transformer, n_head=self.n_head, n_layer=self.n_layer)
 
     def encode(self, images, poses, focal, z_bounds=None, c=None):
         """
@@ -299,9 +301,11 @@ class PixelNeRFNet(torch.nn.Module):
             # Run Radiance Transformer network.
             #self.transformer_key = transformer_key
             if coarse:
-                transformer_output_rgb, transformer_output_sigma, transformer_latent = self.transformer_coarse(query=transformer_query, latent=transformer_key)
+                transformer_output_rgb, transformer_output_sigma, transformer_latent, transformer_attn_prob = \
+                    self.transformer_coarse(query=transformer_query, latent=transformer_key)
             else:
-                transformer_output_rgb, transformer_output_sigma, transformer_latent = self.transformer_fine(query=transformer_query, latent=transformer_key)
+                transformer_output_rgb, transformer_output_sigma, transformer_latent, transformer_attn_prob = \
+                    self.transformer_fine(query=transformer_query, latent=transformer_key)
             
             rgb = transformer_output_rgb[:, 0].reshape(SB, B, 3)
             sigma = transformer_output_sigma.reshape(SB, B, 1)
@@ -309,10 +313,10 @@ class PixelNeRFNet(torch.nn.Module):
             rgb = torch.sigmoid(rgb)
             sigma = torch.relu(sigma)
 
-            #transformer_key = transformer_key.reshape(SB, B, NS, -1)
             transformer_latent = transformer_latent.reshape(SB, B, NS, -1)
+            transformer_attn_prob = transformer_attn_prob.reshape(SB, B, self.n_layer, self.n_head, NS+1, NS+1)
 
-        return rgb, sigma, transformer_latent
+        return rgb, sigma, transformer_latent, transformer_attn_prob
 
     def forward_ref(self, xyz, viewdirs, index_batch, transformer_latent, coarse):
         B = viewdirs.shape[0]
