@@ -4,3 +4,4 @@ debug_pcd
 *.png
 tmp
 logs
+monodepth2

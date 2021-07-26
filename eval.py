@@ -88,12 +88,7 @@ def extra_args(parser):
         action="store_true",
         help="Set to indicate poses may change between objects. In most of our datasets, the test set has fixed poses.",
     )
-    parser.add_argument(
-        "--eval_epoch",
-        type=str,
-        default="latest",
-        help="Step to stop using bbox sampling",
-    )
+
     return parser
 
 args, conf = util.args.parse_args(

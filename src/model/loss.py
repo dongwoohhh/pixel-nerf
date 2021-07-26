@@ -155,10 +155,12 @@ class RGBRefLoss(torch.nn.Module):
 
                 mask_pcd_i = mask_pcd_i[:, idx_nearest].transpose(0, 1)                
                 mask_src_i = mask_pcd_i[:, idx_src_i]
+                
+                mask_zero_i = torch.gt(torch.sum(mask_src_i, dim=1, keepdim=True), 0)
                 mask_src_i = torch.logical_not(mask_src_i)
-
+                
                 mask_i = mask_pcd_i * mask_dist_i
-                mask_src_i = mask_src_i * mask_dist_i
+                mask_src_i = mask_src_i * mask_dist_i * mask_zero_i
                 mask_src_i = mask_src_i.squeeze(-1)[:, None, None, None, :]
                 mask_src_i = mask_src_i.repeat(1, NL, NH, NS, 1)
             # need mask for token.
