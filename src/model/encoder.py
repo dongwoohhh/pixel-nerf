@@ -67,6 +67,7 @@ class SpatialEncoder(nn.Module):
             self.model.avgpool = nn.Sequential()
             self.latent_size = [0, 64, 128, 256, 512, 1024][num_layers]
 
+        raise NotImplementedError
         self.num_layers = num_layers
         self.index_interp = index_interp
         self.index_padding = index_padding
