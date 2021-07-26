@@ -121,6 +121,7 @@ class PixelNeRFNet(torch.nn.Module):
         default is center of image
         """
         self.num_objs = images.size(0)
+        self.n_views = images.shape[1]
         if len(images.shape) == 5:
             assert len(poses.shape) == 4
             assert poses.size(1) == images.size(
