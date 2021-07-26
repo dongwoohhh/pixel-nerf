@@ -137,7 +137,7 @@ class RGBRefLoss(torch.nn.Module):
             rgb_gt_i = rgb_ref_gt[i_sb, mask_ref_i]
             uv_i = uv_ref[i_sb, mask_ref_i]
             points_i = points_ref[i_sb, mask_ref_i]
-            attn_prob_i = attn_prob[i_sb, mask_ref_i, :, :, :-1, :-1]
+            attn_prob_i = attn_prob[i_sb, mask_ref_i]
             idx_src_i = idx_src[i_sb]
 
             xyz_pcd_i = xyz_pcd[i_sb]

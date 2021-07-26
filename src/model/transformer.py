@@ -24,8 +24,8 @@ class RadianceTransformer2(nn.Module):
         self.n_layer = n_layer
         self.layers = []
         # Cls token for sigma prediction.
-        self.cls_token = nn.Parameter(torch.zeros(1, 1, n_dim))
-        nn.init.normal_(self.cls_token, std=0.02)
+        #self.cls_token = nn.Parameter(torch.zeros(1, 1, n_dim))
+        #nn.init.normal_(self.cls_token, std=0.02)
         # Linear Input latent projection
         self.linear1 = nn.Linear(d_k, n_dim)
         nn.init.constant_(self.linear1.bias, 0.0)
@@ -51,8 +51,9 @@ class RadianceTransformer2(nn.Module):
 
     def forward(self, query, latent):
         out = self.linear1(latent)
-        cls_token = self.cls_token.repeat(out.shape[0], 1, 1)
-        out = torch.cat([out, cls_token], dim=1)
+        out = self.activation(out)
+        #cls_token = self.cls_token.repeat(out.shape[0], 1, 1)
+        #out = torch.cat([out, cls_token], dim=1)
 
         attn_prob_list = []
         for layer in self.layers:
@@ -60,17 +61,19 @@ class RadianceTransformer2(nn.Module):
             attn_prob_list.append(layer.multi_head_attention_layer.attention_prob)
         attn_prob_list = torch.stack(attn_prob_list, dim=1)
 
-        out_token = out[:, -1, :]
-        out_latent = out[:, :-1, :]
+        #out_token = out[:, -1, :]
+        #out_latent = out[:, :-1, :]
 
-        #sigma = torch.max(out, dim = 1)[0]
-        #sigma = self.layer_sigma(sigma)
-        sigma = self.layer_sigma(self.activation(out_token))
+        sigma = torch.max(out, dim = 1)[0]
+        sigma = self.layer_sigma(sigma)
+        #sigma = self.layer_sigma(self.activation(out_token))
+
         #out = self.attn_from_ref_to_src(query=query, key=out_latent, value=out_latent)
         #color = self.layer_color(out)
-        color = self.forward_attention_to_source(query=query, key=out_latent, value=out_latent)
+        #color = self.forward_attention_to_source(query=query, key=out_latent, value=out_latent)
+        color = self.forward_attention_to_source(query=query, key=out, value=out)
 
-        return color, sigma, out_latent, attn_prob_list
+        return color, sigma, out, attn_prob_list
 
     def forward_attention_to_source(self, query, key, value):
         out = self.attn_from_ref_to_src(query, key, value)

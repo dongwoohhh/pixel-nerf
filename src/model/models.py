@@ -314,7 +314,7 @@ class PixelNeRFNet(torch.nn.Module):
             sigma = torch.relu(sigma)
 
             transformer_latent = transformer_latent.reshape(SB, B, NS, -1)
-            transformer_attn_prob = transformer_attn_prob.reshape(SB, B, self.n_layer, self.n_head, NS+1, NS+1)
+            transformer_attn_prob = transformer_attn_prob.reshape(SB, B, self.n_layer, self.n_head, NS, NS)
 
         return rgb, sigma, transformer_latent, transformer_attn_prob
 
