@@ -157,7 +157,7 @@ class Trainer:
             )
 
             batch = 0
-            for _ in range(5, self.num_epoch_repeats):
+            for _ in range(self.num_epoch_repeats):
                 for data in self.train_data_loader:
                     losses = self.train_step(data, global_step=step_id)
                     loss_str = fmt_loss_str(losses)
