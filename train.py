@@ -238,9 +238,10 @@ class PixelNeRFTrainer(trainlib.Trainer):
         net.encode_all_poses(all_poses)
         
         all_bboxes = all_poses = None
-
+        #print('dataloader', util.getMemoryUsage())
         render_dict = DotMap(render_par(all_rays, all_index_target, training=True, want_weights=True,))
-      
+        #print('forward', util.getMemoryUsage())
+
         coarse = render_dict.coarse
         fine = render_dict.fine
         using_fine = len(fine) > 0
@@ -274,12 +275,13 @@ class PixelNeRFTrainer(trainlib.Trainer):
             loss = loss + attn_loss
         else:
             loss = loss
-
+        #print('loss compute', util.getMemoryUsage())
         if is_train:
             loss.backward()
+        #print('backward', util.getMemoryUsage())
 
         all_index_target = all_points = all_pcd_mask = all_images = images_0to1 =None
-
+        #raise NotImplementedError
         return loss_dict
 
     def train_step(self, data, global_step):
@@ -346,7 +348,9 @@ class PixelNeRFTrainer(trainlib.Trainer):
             test_rays = test_rays.reshape(1, H * W, -1)
             test_poses = test_poses.reshape(1, 1, 4, 4)
             net.encode_all_poses(test_poses)
+            #print('vis bef. forward', util.getMemoryUsage())
             render_dict = DotMap(render_par(test_rays, index_dest, training=False, want_weights=True))
+            #print('vis aft. forward', util.getMemoryUsage())
             coarse = render_dict.coarse
             fine = render_dict.fine
 

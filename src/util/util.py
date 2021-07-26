@@ -9,6 +9,7 @@ import functools
 import math
 import warnings
 
+from pynvml.smi import nvidia_smi
 
 def image_float_to_uint8(img):
     """
@@ -536,3 +537,14 @@ def get_module(net):
         return net.module
     else:
         return net
+
+
+nvsmi = nvidia_smi.getInstance()
+def getMemoryUsage():
+    usage_list = nvsmi.DeviceQuery("memory.used")["gpu"]
+    sum = 0.0
+    for i in range(len(usage_list)):
+        usage_i = usage_list[i]["fb_memory_usage"]
+        sum += usage_i["used"]
+
+    return "main: %d %s, total: %d %s" % (usage_list[0]["fb_memory_usage"]["used"], usage_i["unit"], sum, usage_i["unit"])
