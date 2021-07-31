@@ -79,11 +79,7 @@ def parse_args(
         "--eval_epoch",
         type=str,
         default="latest",
-<<<<<<< HEAD
-        help="Epoch to load trained model",
-=======
         help="Epoch id for load pretrained weights",
->>>>>>> load monodepth2 state_dict
     )
     if callback is not None:
         parser = callback(parser)
