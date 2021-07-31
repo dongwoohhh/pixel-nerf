@@ -75,6 +75,12 @@ def parse_args(
         default="visuals",
         help="visualization output directory",
     )
+    parser.add_argument(
+        "--eval_epoch",
+        type=str,
+        default="latest",
+        help="Epoch to load trained model",
+    )
     if callback is not None:
         parser = callback(parser)
     args = parser.parse_args()

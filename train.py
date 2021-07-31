@@ -278,6 +278,7 @@ class PixelNeRFTrainer(trainlib.Trainer):
         #print('loss compute', util.getMemoryUsage())
         if is_train:
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(net.parameters(), 0.1)
         #print('backward', util.getMemoryUsage())
 
         all_index_target = all_points = all_pcd_mask = all_images = images_0to1 =None

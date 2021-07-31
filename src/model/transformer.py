@@ -65,7 +65,7 @@ class RadianceTransformer2(nn.Module):
         #out_latent = out[:, :-1, :]
 
         sigma = torch.max(out, dim = 1)[0]
-        sigma = self.layer_sigma(sigma)
+        sigma = self.layer_sigma(self.activation(sigma))
         #sigma = self.layer_sigma(self.activation(out_token))
 
         #out = self.attn_from_ref_to_src(query=query, key=out_latent, value=out_latent)

@@ -1,6 +1,6 @@
 from .encoder import SpatialEncoder, ImageEncoder
 from .resnetfc import ResnetFC
-
+from .encoder_monodpeth2 import Monodepth2Encoder
 
 def make_mlp(conf, d_in, d_latent=0, allow_empty=False, **kwargs):
     mlp_type = conf.get_string("type", "mlp")  # mlp | resnet
@@ -21,6 +21,8 @@ def make_encoder(conf, **kwargs):
         net = SpatialEncoder.from_conf(conf, **kwargs)
     elif enc_type == "global":
         net = ImageEncoder.from_conf(conf, **kwargs)
+    elif enc_type == 'monodepth2':
+        net = Monodepth2Encoder(conf, **kwargs)
     else:
         raise NotImplementedError("Unsupported encoder type")
     return net

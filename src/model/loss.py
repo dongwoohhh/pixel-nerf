@@ -126,13 +126,13 @@ class RGBRefLoss(torch.nn.Module):
         rgb_ref_gt = rgb_ref_gt.reshape(SB, NR, 3, B).permute(0, 3, 1, 2)
         mask_ref = mask_ref.reshape(SB, NR, B).transpose(1, 2)
 
-        loss = []
+        loss_rgb_ref = []
         loss_attn_prob = []
         for i_sb in range(SB):
             mask_ref_i = mask_ref[i_sb]
             #print(torch.sum(mask_ref_i, dim=1))
-            mask_ref_i = torch.gt(torch.sum(mask_ref_i, dim=1), 1)
-                
+            mask_ref_i = torch.gt(torch.sum(mask_ref_i, dim=1), 0)
+
             rgb_i = rgb_ref[i_sb, mask_ref_i]
             rgb_gt_i = rgb_ref_gt[i_sb, mask_ref_i]
             uv_i = uv_ref[i_sb, mask_ref_i]
@@ -155,36 +155,43 @@ class RGBRefLoss(torch.nn.Module):
 
                 mask_pcd_i = mask_pcd_i[:, idx_nearest].transpose(0, 1)                
                 mask_src_i = mask_pcd_i[:, idx_src_i]
+
+                # Not apply loss if all source view points are not visible.
+                mask_all_zero_i = torch.gt(torch.sum(mask_src_i, dim=1, keepdim=True), 0)
                 mask_src_i = torch.logical_not(mask_src_i)
 
                 mask_i = mask_pcd_i * mask_dist_i
-                mask_src_i = mask_src_i * mask_dist_i
+                mask_src_i = mask_src_i * mask_dist_i * mask_all_zero_i
                 mask_src_i = mask_src_i.squeeze(-1)[:, None, None, None, :]
                 mask_src_i = mask_src_i.repeat(1, NL, NH, NS, 1)
-            # need mask for token.
-            #print(attn_prob_i.shape)
-            #print(mask_src_i.shape)
-            #print(mask_src_i[0, 0, 0, :, :])
 
-            labels_zero = torch.zeros_like(attn_prob_i)
-
-            loss_i = self.l1_loss(rgb_i, rgb_gt_i)
-            loss_attn_i = self.bce_loss(attn_prob_i, labels_zero)
+            loss_rgb_ref_i = self.l1_loss(rgb_i, rgb_gt_i)
 
             if torch.sum(mask_i) > 0:
-                loss_i = torch.sum(loss_i * mask_i) / (3*torch.sum(mask_i))
+                loss_rgb_ref_i = torch.sum(loss_rgb_ref_i * mask_i) / (3*torch.sum(mask_i))
             else:
-                loss_i = torch.sum(loss_i * mask_i)
+                loss_rgb_ref_i = torch.zeros(1, device=rgb_i.device).mean()
+            loss_rgb_ref.append(loss_rgb_ref_i)
+            
+            attn_positive_i = torch.where(torch.logical_not(mask_src_i), attn_prob_i, torch.zeros_like(attn_prob_i))
+            attn_negative_i = torch.where(mask_src_i, attn_prob_i, torch.zeros_like(attn_prob_i))
 
+            attn_positive_i = torch.sum(attn_positive_i, dim=-1, keepdim=True)
+            attn_negative_i = torch.sum(attn_negative_i, dim=-1, keepdim=True)
+            
+            attn_agg_i = torch.cat([attn_positive_i, attn_negative_i], dim=-1)
+            attn_agg_i = torch.clamp(attn_agg_i, 0.0, 1.0)
+            labels_agg_i = torch.cat([torch.ones_like(attn_positive_i), torch.zeros_like(attn_negative_i)], dim=-1)
+
+            loss_attn_i = self.bce_loss(attn_agg_i, labels_agg_i)
+            
             if torch.sum(mask_src_i) > 0:
-                loss_attn_i = torch.sum(loss_attn_i * mask_src_i) / torch.sum(mask_src_i)
+                loss_attn_i = loss_attn_i.mean()
             else:
-                loss_attn_i = torch.sum(loss_attn_i * mask_src_i)
-
-            loss.append(loss_i)
+                loss_attn_i = torch.zeros(1, device=attn_prob_i.device).mean()
             loss_attn_prob.append(loss_attn_i)
         
-        loss_rgb_ref = torch.stack(loss)
+        loss_rgb_ref = torch.stack(loss_rgb_ref)
         loss_rgb_ref = 0.1 * loss_rgb_ref.mean()
 
         loss_attn_prob = torch.stack(loss_attn_prob)
