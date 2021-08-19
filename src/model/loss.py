@@ -110,7 +110,7 @@ class RGBRefLoss(torch.nn.Module):
         self.l1_loss = torch.nn.L1Loss(reduction="none")
         self.bce_loss = torch.nn.BCELoss(reduction="none")
         self.thr_dist = 0.01
-
+        self.n_supervised_heads = 1
         self.register_buffer("scale", torch.empty(2, dtype=torch.float32), persistent=False)
     def forward(self, rgb_ref, uv_ref, points_ref, attn_prob, idx_src, images, xyz_pcd, mask_pcd):
         SB, B, NR, _ = rgb_ref.shape
@@ -126,6 +126,8 @@ class RGBRefLoss(torch.nn.Module):
         rgb_ref_gt = rgb_ref_gt.reshape(SB, NR, 3, B).permute(0, 3, 1, 2)
         mask_ref = mask_ref.reshape(SB, NR, B).transpose(1, 2)
 
+
+
         loss_rgb_ref = []
         loss_attn_prob = []
         for i_sb in range(SB):
@@ -137,7 +139,7 @@ class RGBRefLoss(torch.nn.Module):
             rgb_gt_i = rgb_ref_gt[i_sb, mask_ref_i]
             uv_i = uv_ref[i_sb, mask_ref_i]
             points_i = points_ref[i_sb, mask_ref_i]
-            attn_prob_i = attn_prob[i_sb, mask_ref_i]
+            attn_prob_i = attn_prob[i_sb, mask_ref_i, :, :self.n_supervised_heads]
             idx_src_i = idx_src[i_sb]
 
             xyz_pcd_i = xyz_pcd[i_sb]
@@ -163,7 +165,7 @@ class RGBRefLoss(torch.nn.Module):
                 mask_i = mask_pcd_i * mask_dist_i
                 mask_src_i = mask_src_i * mask_dist_i * mask_all_zero_i
                 mask_src_i = mask_src_i.squeeze(-1)[:, None, None, None, :]
-                mask_src_i = mask_src_i.repeat(1, NL, NH, NS, 1)
+                mask_src_i = mask_src_i.repeat(1, NL, self.n_supervised_heads, NS, 1)
 
             loss_rgb_ref_i = self.l1_loss(rgb_i, rgb_gt_i)
 
