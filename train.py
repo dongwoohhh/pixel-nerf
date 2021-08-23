@@ -21,7 +21,7 @@ import numpy as np
 import torch.nn.functional as F
 import torch
 from dotmap import DotMap
-
+from torchinfo import summary
 
 def extra_args(parser):
     parser.add_argument(
@@ -229,7 +229,7 @@ class PixelNeRFTrainer(trainlib.Trainer):
         )  # (SB, NS, 3, H, W)
         src_poses = util.batched_index_select_nd(all_poses, image_ord)  # (SB, NS, 4, 4)
         src_depthmap = util.batched_index_select_nd(all_depthmap, image_ord) # (SB, NS, 1, H, W)
-
+        
         net.encode(
             src_images,
             src_poses,
@@ -241,8 +241,11 @@ class PixelNeRFTrainer(trainlib.Trainer):
         
         all_bboxes = all_poses = None
         #print('dataloader', util.getMemoryUsage())
+        #print(all_rays.shape, all_index_target.shape)
         render_dict = DotMap(render_par(all_rays, all_index_target, training=True, want_weights=True,))
-
+        
+        
+        raise NotImplementedError
         coarse = render_dict.coarse
         fine = render_dict.fine
         using_fine = len(fine) > 0

@@ -10,6 +10,7 @@ import util
 import torch.autograd.profiler as profiler
 from torch.nn import DataParallel
 from dotmap import DotMap
+from torchinfo import summary
 
 
 class _RenderWrapper(torch.nn.Module):
@@ -226,7 +227,10 @@ class NeRFRenderer(torch.nn.Module):
                     #val_all.append(output_ray)
                     #if not self.training:
                     #    print('On composition', util.getMemoryUsage())
+                    if coarse:
+                        summary(model, input_data=[pnts, indices, coarse, dirs])
                     rgb_ray, sigma_ray, transformer_latent, transformer_attn_prob = model(pnts, indices, coarse=coarse, viewdirs=dirs)
+                    raise NotImplementedError
                     rgb_ray_all.append(rgb_ray)
                     sigma_ray_all.append(sigma_ray)
                     if self.training:
