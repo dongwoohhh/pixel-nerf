@@ -166,3 +166,7 @@ nsml run -d video_nfs3 -m 'eval_Transformer_noattn_V6_clip_6v' -e eval.py -a "--
 # GT depth mask
 nsml run -d video_nfs3 -m 'Transformer_gtmask_V6' -e train.py -a "--logs_path /data/video_nfs3/dongwool/results_nerf/pixel-nerf/logs --checkpoints_path /data/video_nfs3/dongwool/results_nerf/pixel-nerf/summary --visual_path /data/video_nfs3/dongwool/results_nerf/pixel-nerf/visuals -D /data/video_nfs3/dongwool/datasets/dtu_dataset/rs_dtu_4 -V 6 -n Transformer_gtmask_V6 -c conf/exp/dtu_nsml.conf --epochs 64 --split_name new --use_color_ref --resume --gpu_id '0 1 2 3' -B 4" --nfs-output -c 13 -g 4 --shm-size '24G' --gpu-driver-version 400
 nsml run -d video_nfs3 -m 'Transformer_gtmask_V6' -e train.py -a "--logs_path /data/video_nfs3/dongwool/results_nerf/pixel-nerf/logs --checkpoints_path /data/video_nfs3/dongwool/results_nerf/pixel-nerf/summary --visual_path /data/video_nfs3/dongwool/results_nerf/pixel-nerf/visuals -D /data/video_nfs3/dongwool/datasets/dtu_dataset/rs_dtu_4 -V 6 -n Transformer_gtmask2_V6 -c conf/exp/dtu_nsml.conf --epochs 64 --split_name new --use_color_ref --resume --gpu_id '0 1 2' -B 4" --nfs-output -c 13 -g 3 --shm-size '24G' --gpu-driver-version 400
+
+# Docker
+
+CUDA_VISIBLE_DEVICES=2,3 python train.py --logs_path /workspace/results_nerf/pixel-nerf/logs --checkpoints_path /workspace/results_nerf/pixel-nerf/summary --visual_path /workspace/results_nerf/pixel-nerf/visuals -D /workspace/datasets/dtu_dataset/rs_dtu_4 -V 6 -n Transformer_gtmask2_V6 -c conf/exp/dtu_nsml.conf --epochs 64 --split_name new --use_color_ref --resume --gpu_id '0 1'
