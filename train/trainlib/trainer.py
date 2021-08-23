@@ -18,14 +18,14 @@ class Trainer:
             batch_size=args.batch_size,
             shuffle=True,
             num_workers=8,
-            pin_memory=False,
+            pin_memory=True#False,
         )
         self.test_data_loader = torch.utils.data.DataLoader(
             test_dataset,
             batch_size=min(args.batch_size, 16),
             shuffle=True,
             num_workers=4,
-            pin_memory=False,
+            pin_memory=True#False,
         )
 
         self.num_total_batches = len(self.train_dataset)
