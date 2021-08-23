@@ -124,7 +124,7 @@ class PixelNeRFTrainer(trainlib.Trainer):
             print("using fine loss")
             fine_loss_conf = conf["loss.rgb_fine"]
         self.rgb_fine_crit = loss.get_rgb_loss(fine_loss_conf, False)
-
+        # Loss function for reference color optimization.
         self.rgb_ref_crit = loss.RGBRefLoss()
 
 
@@ -240,7 +240,6 @@ class PixelNeRFTrainer(trainlib.Trainer):
         all_bboxes = all_poses = None
         #print('dataloader', util.getMemoryUsage())
         render_dict = DotMap(render_par(all_rays, all_index_target, training=True, want_weights=True,))
-        #print('forward', util.getMemoryUsage())
 
         coarse = render_dict.coarse
         fine = render_dict.fine
@@ -250,7 +249,10 @@ class PixelNeRFTrainer(trainlib.Trainer):
         loss_dict["rc"] = rgb_loss.item() * self.lambda_coarse
 
         all_images_0to1 = all_images * 0.5 + 0.5
-        rgb_ref_loss, attn_loss = self.rgb_ref_crit(coarse.rgb_ref, coarse.uv_ref, coarse.points_ref, coarse.attn_prob, image_ord, all_images_0to1, all_points, all_pcd_mask)
+        rgb_ref_loss, attn_loss = self.rgb_ref_crit(
+            coarse.rgb_ref, coarse.uv_ref, coarse.points_ref, coarse.attn_prob,
+            image_ord, all_images_0to1, all_points, all_pcd_mask
+        )
         loss_dict["rc_ref"] = rgb_ref_loss.item() * self.lambda_coarse
         loss_dict["rc_attn"] = attn_loss.item() * self.lambda_coarse
 
@@ -259,7 +261,10 @@ class PixelNeRFTrainer(trainlib.Trainer):
             rgb_loss = rgb_loss * self.lambda_coarse + fine_loss * self.lambda_fine
             loss_dict["rf"] = fine_loss.item() * self.lambda_fine
 
-            fine_ref_loss, fine_attn_loss = self.rgb_ref_crit(fine.rgb_ref, fine.uv_ref, fine.points_ref, fine.attn_prob, image_ord, all_images_0to1, all_points, all_pcd_mask)
+            fine_ref_loss, fine_attn_loss = self.rgb_ref_crit(
+                fine.rgb_ref, fine.uv_ref, fine.points_ref, fine.attn_prob,
+                image_ord, all_images_0to1, all_points, all_pcd_mask
+            )
             rgb_ref_loss = rgb_ref_loss * self.lambda_coarse + fine_ref_loss * self.lambda_fine
             attn_loss = attn_loss * self.lambda_coarse + fine_attn_loss * self.lambda_fine
             loss_dict["rf_ref"] = fine_ref_loss.item() * self.lambda_fine
@@ -275,10 +280,9 @@ class PixelNeRFTrainer(trainlib.Trainer):
             loss = loss + attn_loss
         else:
             loss = loss
-        #print('loss compute', util.getMemoryUsage())
+
         if is_train:
             loss.backward()
-        #print('backward', util.getMemoryUsage())
 
         all_index_target = all_points = all_pcd_mask = all_images = images_0to1 =None
         #raise NotImplementedError

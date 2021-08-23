@@ -80,6 +80,15 @@ class DVRDataset(torch.utils.data.Dataset):
         )
 
         self.image_size = image_size
+        self._coord_trans_world = torch.tensor(
+                [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]],
+                dtype=torch.float32,
+        )
+        self._coord_trans_cam = torch.tensor(
+            [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]],
+            dtype=torch.float32,
+        )
+        """
         if sub_format == "dtu":
             self._coord_trans_world = torch.tensor(
                 [[1, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]],
@@ -98,6 +107,7 @@ class DVRDataset(torch.utils.data.Dataset):
                 [[1, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]],
                 dtype=torch.float32,
             )
+        """
         self.sub_format = sub_format
         self.scale_focal = scale_focal
         self.max_imgs = max_imgs
@@ -271,15 +281,17 @@ class DVRDataset(torch.utils.data.Dataset):
 
             pcd_data_dir = os.path.join(root_dir, 'pcd_mask.pt')
             points_dir = os.path.join(root_dir, 'points.pt')
+            depthmap_dir = os.path.join(root_dir, 'depthmap.pt')
             n_views, _, height, width = all_imgs.shape
-            if os.path.isfile(pcd_data_dir):
+            if os.path.isfile(depthmap_dir):
                 #print('load', pcd_data_dir)
                 pcd_data = torch.load(pcd_data_dir)
                 points = torch.load(points_dir)
+                depthmap = torch.load(depthmap_dir)
             else:
                 #print('process', pcd_data_dir)
                 pcd_load = o3d.io.read_point_cloud(os.path.join(root_dir, 'points.ply'))
-                pcd_load = pcd_load.voxel_down_sample(voxel_size=0.7)
+                #pcd_load = pcd_load.voxel_down_sample(voxel_size=0.7)
                 
                 points = np.asarray(pcd_load.points)
                 colors_pcd = np.asarray(pcd_load.colors)
@@ -294,8 +306,6 @@ class DVRDataset(torch.utils.data.Dataset):
                 points = points.T
 
                 # Get color of points from multi-view images.
-                focal[..., 1] *= -1.0
-
                 rot = all_poses[:, :3, :3].transpose(2, 1)
                 trans = - torch.matmul(rot, all_poses[:, :3, 3:])
                 poses = torch.cat((rot, trans), dim=-1)
@@ -304,15 +314,42 @@ class DVRDataset(torch.utils.data.Dataset):
                 xyz = torch.matmul(rot, xyz.transpose(2, 1))
                 xyz = xyz + poses[:, :3, 3, None]
                 xyz = xyz.transpose(2, 1)
-                depth = - xyz[:, :, 2:3]
-                
-                uv = - xyz[:, :, :2] / xyz[:, :, 2:3]        
+                depth = xyz[:, :, 2:3]
+
+                uv = xyz[:, :, :2] / xyz[:, :, 2:3]        
                 uv *= focal[None, None, :]
                 uv += c[None, None, :]
 
                 scale = np.array([1 / width, 1 / height], dtype=np.float32)
 
                 uv_normalized = uv*scale * 2 - 1.0
+
+                depthmap = np.zeros((n_views, 300, 400, 1), dtype=np.float32)
+                for i in range(n_views):
+                    uv_i = uv[i]
+                    xy = np.floor(uv_i.numpy()).astype(np.int32)
+                    mask = np.where((xy[:, 0]>0) & (xy[:, 0]<400) & (xy[:, 1]>0) & (xy[:, 1]<300))
+                    xy = xy[mask]
+
+                    colors_i = colors_pcd[mask]
+                    depth_i = depth[i, mask]
+                    # Sort near to far.
+                    _, idx_sorted = torch.sort(depth_i, dim=1, descending=True)
+                    idx_sorted = idx_sorted.squeeze()
+                    
+                    colors_i = colors_i[idx_sorted]
+                    depth_i = depth_i[0, idx_sorted]
+                    xy = xy[idx_sorted]
+
+                    #image_w = np.zeros((300, 400, 3), dtype=np.float32)
+                    #depthmap_i = np.zeros((300, 400, 1), dtype=np.float32)
+                    depthmap[i, xy[:, 1], xy[:, 0], :] = depth_i
+                    #image_w[xy[:, 1], xy[:, 0], :] = colors_i * 255
+                    #depthmap_i[xy[:, 1], xy[:, 0], :] = depth_i / 5.0 * 255
+                    #cv2.imwrite('debug_pcd/warped_{}.png'.format(i), cv2.cvtColor(image_w, cv2.COLOR_RGB2BGR))
+                    #cv2.imwrite('debug_pcd/warped_depth_{}.png'.format(i), depthmap_i)
+                cv2.imwrite(os.path.join(root_dir, 'depth.png'), depthmap[24] / 5.0 * 255)
+                torch.save(depthmap, depthmap_dir)
 
                 uv_round = torch.round(uv)
                 mask_list = []
@@ -360,12 +397,7 @@ class DVRDataset(torch.utils.data.Dataset):
                             & ((data_sorted['u'] != data_sorted_prev['u']) \
                                | (data_sorted['v'] != data_sorted_prev['v'])
                                | (data_sorted['d'] < depth_min + 0.01))
-                    """
-                    np.set_printoptions(edgeitems=100)     
-                    print(data_sorted[800000:800100])
-                    print(mask_i[800000:800100])
-                    raise NotImplementedError
-                    """
+
                     mask_i = mask_i[idx_original]
                     mask_list.append(mask_i)
                     #pixel_id = data_sor
@@ -379,9 +411,7 @@ class DVRDataset(torch.utils.data.Dataset):
                 torch.save(pcd_data, pcd_data_dir)    
                 torch.save(points, points_dir)
 
-
             # Make same number of points in tensor
-            
             n_points = points.shape[0]
             if n_points > n_points_batch:
                 indices = np.random.permutation(n_points)
@@ -393,19 +423,6 @@ class DVRDataset(torch.utils.data.Dataset):
                 pcd_data = torch.cat([pcd_data, pcd_zeros], dim=1)
                 points = torch.cat([points, points_zeros], dim=0)
 
-        """
-        for i in range(n_views):
-            uv_i = uv[i]
-            xy = np.floor(uv_i.numpy()).astype(np.int32)
-
-            mask = np.where((xy[:, 0]>0) & (xy[:, 0]<400) & (xy[:, 1]>0) & (xy[:, 1]<300))
-            xy = xy[mask]
-            colors_i = colors_pcd[mask]
-            image_w = np.zeros((300, 400, 3), dtype=np.float32)
-            image_w[xy[:, 1], xy[:, 0], :] = colors_i * 255
-            cv2.imwrite('debug_pcd/warped_{}.png'.format(i), cv2.cvtColor(image_w, cv2.COLOR_RGB2BGR))
-        """
-        
         result = {
             "path": root_dir,
             "img_id": index,
@@ -413,7 +430,8 @@ class DVRDataset(torch.utils.data.Dataset):
             "images": all_imgs,
             "poses": all_poses,
             "points": points,
-            "pcd_mask": pcd_data
+            "pcd_mask": pcd_data,
+            "depthmap": depthmap,
         }
 
         if all_masks is not None:
