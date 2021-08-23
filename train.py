@@ -308,6 +308,7 @@ class PixelNeRFTrainer(trainlib.Trainer):
             print(idx)
             batch_idx = idx
         images = data["images"][batch_idx].to(device=device)  # (NV, 3, H, W)
+        depthmap = data["depthmap"][batch_idx].to(device=device) # (NV, 1, H, W)
         poses = data["poses"][batch_idx].to(device=device)  # (NV, 4, 4)
         focal = data["focal"][batch_idx : batch_idx + 1]  # (1)
         c = data.get("c")
@@ -340,12 +341,14 @@ class PixelNeRFTrainer(trainlib.Trainer):
         with torch.no_grad():
             test_rays = cam_rays[view_dest]  # (H, W, 8)
             test_images = images[views_src]  # (NS, 3, H, W)
+            test_depth = depthmap[views_src]  # (NS, 1, H, W)
             test_poses = poses[view_dest]
             net.encode(
                 test_images.unsqueeze(0),
                 poses[views_src].unsqueeze(0),
                 focal.to(device=device),
                 c=c.to(device=device) if c is not None else None,
+                depthmap=test_depth[None],
             )
             #index_dest =  view_dest*torch.ones((H, W), dtype=torch.long).to(device=device)
             index_dest =  torch.zeros((H, W), dtype=torch.long).to(device=device)
