@@ -48,7 +48,7 @@ class RadianceTransformer2(nn.Module):
 
         self.activation = nn.ReLU()
 
-    def forward(self, query, latent):
+    def forward(self, query, latent, mask=None):
         out = self.linear1(latent)
         out = self.activation(out)
         #cls_token = self.cls_token.repeat(out.shape[0], 1, 1)
@@ -56,7 +56,7 @@ class RadianceTransformer2(nn.Module):
 
         attn_prob_list = []
         for layer in self.layers:
-            out = layer(out)
+            out = layer(out, mask)
             attn_prob_list.append(layer.multi_head_attention_layer.attention_prob)
         attn_prob_list = torch.stack(attn_prob_list, dim=1)
 
@@ -90,8 +90,8 @@ class TransformerEncoderLayer(nn.Module):
         self.norm_layer1 = nn.LayerNorm(n_dim)
         self.norm_layer2 = nn.LayerNorm(n_dim)
 
-    def forward(self, x):
-        out = self.multi_head_attention_layer(x, x, x) + x
+    def forward(self, x, mask):
+        out = self.multi_head_attention_layer(x, x, x, mask) + x
         out = self.norm_layer1(out)
 
         out = self.position_wise_feed_forward_layer(out) + out
@@ -105,15 +105,16 @@ class MultiHeadAttentionLayer(nn.Module):
         self.n_dim = n_dim
         self.n_head = n_head
 
+        self.register_buffer("inf", torch.tensor([float('inf')]), persistent=True)
+
         self.query_fc_layer = [] #nn.Linear(2, n_dim)
         self.key_fc_layer = [] #nn.Linear(n_dim, n_dim)
         self.value_fc_layer = [] #nn.Linear(n_dim, n_dim)
-        
-        
+
         self.query_fc_layer = nn.Linear(n_query, n_dim*n_head)
         nn.init.constant_(self.query_fc_layer.bias, 0.0)
         nn.init.kaiming_normal_(self.query_fc_layer.weight, a=0, mode="fan_in")
-        
+
         self.key_fc_layer = nn.Linear(n_key, n_dim*n_head)
         nn.init.constant_(self.key_fc_layer.bias, 0.0)
         nn.init.kaiming_normal_(self.key_fc_layer.weight, a=0, mode="fan_in")
@@ -126,7 +127,7 @@ class MultiHeadAttentionLayer(nn.Module):
         nn.init.constant_(self.fc_layer.bias, 0.0)
         nn.init.kaiming_normal_(self.fc_layer.weight, a=0, mode="fan_in")
 
-    def forward(self, query, key, value):
+    def forward(self, query, key, value, mask=None):
         
         # query's shape: (B, N_ref, 2)
         # key, value's shape: (B, N_src, d_k)
@@ -143,17 +144,25 @@ class MultiHeadAttentionLayer(nn.Module):
         key = transform(key, self.key_fc_layer)
         value = transform(value, self.value_fc_layer)
 
-        out = self.calculate_attention(query, key, value)
+        out = self.calculate_attention(query, key, value, mask)
         out = out.transpose(1,2)  # (B, N_ref, H, D)
         out = out.contiguous().view(n_batch, -1, self.n_head*self.n_dim)
         out = self.fc_layer(out)  # (B, N_ref, D)
 
         return out
 
-    def calculate_attention(self, query, key, value):
+    def calculate_attention(self, query, key, value, mask):
         n_dim_key = key.size(-1)
         attention_score = torch.matmul(query, key.transpose(-2, -1))  # Q x K.T
         attention_score = attention_score / math.sqrt(n_dim_key)
+
+        # Mask view which has occlusion.
+        if mask is not None:
+            mask = mask[:, None].repeat(1, self.n_head, 1, 1)
+            mask_inf = torch.where(
+                mask, torch.zeros_like(attention_score), self.inf*torch.ones_like(attention_score)
+            )
+            attention_score = attention_score - mask_inf
 
         self.attention_prob = F.softmax(attention_score, dim=-1)  # (B, N_ref, N_src)
         out = torch.matmul(self.attention_prob, value)  # (B, N_ref, D)

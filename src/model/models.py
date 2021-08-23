@@ -95,6 +95,10 @@ class PixelNeRFNet(torch.nn.Module):
         self.num_objs = 0
         self.num_views_per_obj = 1        
 
+        # depthmap
+        self.register_buffer('depthmap', torch.empty(1, 1, 1, 1), persistent=False)
+        self.register_buffer('scale', torch.empty(2), persistent=False)
+
         self.n_head = 4
         self.n_layer = 4
         d_latent_transformer = 256
@@ -104,7 +108,7 @@ class PixelNeRFNet(torch.nn.Module):
             n_dim=d_latent_transformer, n_head=self.n_head, n_layer=self.n_layer)
 
 
-    def encode(self, images, poses, focal, z_bounds=None, c=None):
+    def encode(self, images, poses, focal, z_bounds=None, c=None, depthmap=None):
         """
         :param images (NS, 3, H, W)
         NS is number of input (aka source or reference) views
@@ -157,6 +161,10 @@ class PixelNeRFNet(torch.nn.Module):
             # Vector c: cx = cy = c_i *for view i*
             c = c.unsqueeze(-1).repeat((1, 2))
         self.c = c
+
+        if depthmap is not None:
+            self.depthmap = depthmap.reshape(-1, *depthmap.shape[2:])
+            #out = self.index_depthmap(100*torch.ones((24,1,2), device=self.focal.device))
 
         if self.use_global_encoder:
             self.global_encoder(images)
@@ -247,6 +255,21 @@ class PixelNeRFNet(torch.nn.Module):
                 z_feature_src = z_feature.reshape(SB, NS, B, -1)
                 z_feature_src = z_feature_src.transpose(1, 2).reshape(SB*B, NS, -1)
                 transformer_key = torch.cat((latent_src, z_feature_src), dim=-1)
+            
+            # Directly use depth to mask occluded source views
+            depth_src = self.index_depthmap(uv).squeeze()
+            z_sample = xyz[:, :, 2]
+            mask_occlusion = torch.logical_or(depth_src >= z_sample, depth_src == 0.0)
+            mask_occlusion = mask_occlusion.reshape(SB, NS, B).transpose(1, 2).reshape(SB*B, 1, NS)
+            
+            mask_sum = torch.sum(mask_occlusion, dim=2, keepdim=True).repeat(1, 1, NS)
+
+            mask_occlusion = torch.where(torch.logical_and(mask_sum==0, mask_occlusion==0),
+                                         torch.logical_not(mask_occlusion),
+                                         mask_occlusion)
+
+            mask_occlusion = mask_occlusion.repeat(1, NS, 1)
+            
             """
                 if self.stop_encoder_grad:
                     latent = latent.detach()
@@ -293,13 +316,12 @@ class PixelNeRFNet(torch.nn.Module):
             sigma = mlp_output
             """
             # Run Radiance Transformer network.
-            #self.transformer_key = transformer_key
             if coarse:
                 transformer_output_rgb, transformer_output_sigma, transformer_latent, transformer_attn_prob = \
-                    self.transformer_coarse(query=transformer_query, latent=transformer_key)
+                    self.transformer_coarse(query=transformer_query, latent=transformer_key, mask=mask_occlusion)
             else:
                 transformer_output_rgb, transformer_output_sigma, transformer_latent, transformer_attn_prob = \
-                    self.transformer_fine(query=transformer_query, latent=transformer_key)
+                    self.transformer_fine(query=transformer_query, latent=transformer_key, mask=mask_occlusion)
             
             rgb = transformer_output_rgb[:, 0].reshape(SB, B, 3)
             sigma = transformer_output_sigma.reshape(SB, B, 1)
@@ -408,7 +430,22 @@ class PixelNeRFNet(torch.nn.Module):
         torch.save(self.state_dict(), latest_path)
         return self
 
-    
+    def index_depthmap(self, uv):
+        self.scale[0] = 1 / self.image_shape[0]
+        self.scale[1] = 1 / self.image_shape[1]
+
+        epsilon = [1*self.scale[0]*2, 1*self.scale[1]*2]
+        
+        uv = uv * self.scale * 2 - 1.0
+        uv = uv.unsqueeze(2)
+        samples = F.grid_sample(
+            self.depthmap,
+            uv,
+            align_corners=True, mode='bilinear',
+            padding_mode='zeros'
+        )
+        return samples[:, :, :, 0]
+
     def encode_all_poses(self, poses):
         SB, NV, _ , _ = poses.shape
         poses = poses.reshape(-1, 4, 4)

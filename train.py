@@ -149,7 +149,7 @@ class PixelNeRFTrainer(trainlib.Trainer):
         if "images" not in data:
             return {}
         all_images = data["images"].to(device=device)  # (SB, NV, 3, H, W)
-
+        all_depthmap = data["depthmap"].to(device=device) # (SB, NV, 1, H, W)
         SB, NV, _, H, W = all_images.shape
         all_poses = data["poses"].to(device=device)  # (SB, NV, 4, 4)
         all_bboxes = data.get("bbox")  # (SB, NV, 4)  cmin rmin cmax rmax
@@ -228,12 +228,14 @@ class PixelNeRFTrainer(trainlib.Trainer):
             all_images, image_ord
         )  # (SB, NS, 3, H, W)
         src_poses = util.batched_index_select_nd(all_poses, image_ord)  # (SB, NS, 4, 4)
+        src_depthmap = util.batched_index_select_nd(all_depthmap, image_ord) # (SB, NS, 1, H, W)
 
         net.encode(
             src_images,
             src_poses,
             all_focals.to(device=device),
             c=all_c.to(device=device) if all_c is not None else None,
+            depthmap=src_depthmap,
         )
         net.encode_all_poses(all_poses)
         

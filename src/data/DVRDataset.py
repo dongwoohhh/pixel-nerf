@@ -422,6 +422,9 @@ class DVRDataset(torch.utils.data.Dataset):
                 points_zeros = torch.zeros((n_points_batch-n_points, 3))
                 pcd_data = torch.cat([pcd_data, pcd_zeros], dim=1)
                 points = torch.cat([points, points_zeros], dim=0)
+            
+            # Convert depthmap to channel_first.
+            depthmap = depthmap.squeeze()[:, None]
 
         result = {
             "path": root_dir,
