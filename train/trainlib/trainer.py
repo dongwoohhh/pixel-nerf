@@ -149,14 +149,21 @@ class Trainer:
         test_data_iter = data_loop(self.test_data_loader)
 
         step_id = self.start_iter_id
+        n_batch = self.num_epoch_repeats*len(self.train_data_loader)
+        epoch = step_id // n_batch
+        batch = step_id % n_batch #step_id - epoch*n_batch
+
+        print("Resumed epoch: {}, batch: {}".format(epoch, batch))
 
         progress = tqdm.tqdm(bar_format="[{rate_fmt}] ")
-        for epoch in range(self.num_epochs):
+
+        #for epoch in range(self.num_epochs):
+        while(epoch<self.num_epochs):
             self.writer.add_scalar(
                 "lr", self.optim.param_groups[0]["lr"], global_step=step_id
             )
 
-            batch = 0
+            batch = step_id % n_batch
             for _ in range(self.num_epoch_repeats):
                 for data in self.train_data_loader:
                     losses = self.train_step(data, global_step=step_id)
@@ -184,7 +191,7 @@ class Trainer:
                             "test", test_losses, global_step=step_id
                         )
                         print("*** Eval:", "E", epoch, "B", batch, test_loss_str, " lr")
-
+                    #if 0:
                     if batch % self.save_interval == 0 and (epoch > 0 or batch > 0):# and step_id > self.args.no_save_model_step:
                         print("saving")
                         if self.managed_weight_saving:
@@ -242,5 +249,6 @@ class Trainer:
                     progress.update(1)
                 if self.args.max_step < step_id:
                     break
+            epoch +=1
             if self.lr_scheduler is not None:
                 self.lr_scheduler.step()
