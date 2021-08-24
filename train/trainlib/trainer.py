@@ -163,7 +163,7 @@ class Trainer:
                 "lr", self.optim.param_groups[0]["lr"], global_step=step_id
             )
 
-            batch = step_id % n_batch
+            batch = 0#step_id % n_batch
             for _ in range(self.num_epoch_repeats):
                 for data in self.train_data_loader:
                     losses = self.train_step(data, global_step=step_id)
