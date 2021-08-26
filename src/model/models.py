@@ -4,7 +4,7 @@ Main model implementation
 from numpy.core.fromnumeric import repeat
 import torch
 from .encoder import ImageEncoder
-from .transformer import RadianceTransformer, RadianceTransformer2
+from .transformer import RadianceTransformer2
 from .code import PositionalEncoding
 from .model_util import make_encoder, make_mlp
 import torch.autograd.profiler as profiler
@@ -367,7 +367,7 @@ class PixelNeRFNet(torch.nn.Module):
         )
         """
         ckpt_name = (
-            "pixel_nerf_init" if opt_init or not args.resume else "pixel_nerf_{}".format(args.eval_epoch)
+            "pixel_nerf_init" if opt_init or not args.resume else "pixel_nerf_latest"
         )
         model_path = "%s/%s/%s" % (args.checkpoints_path, args.name, ckpt_name)
 

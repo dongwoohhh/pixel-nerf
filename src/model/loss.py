@@ -3,6 +3,11 @@ import torch.nn.functional as F
 from torchvision.utils import save_image
 import random
 
+from matplotlib import pyplot as plt
+import imageio
+import os
+import numpy as np
+
 class AlphaLossNV2(torch.nn.Module):
     """
     Implement Neural Volumes alpha loss 2
@@ -109,7 +114,7 @@ class RGBRefLoss(torch.nn.Module):
         super().__init__()
         self.l1_loss = torch.nn.L1Loss(reduction="none")
         
-        self.thr_dist = 0.01
+        self.thr_dist = 0.1#0.02
 
         self.register_buffer("scale", torch.empty(2, dtype=torch.float32), persistent=False)
     def forward(self, rgb_ref, uv_ref, points_ref, images, xyz_pcd, mask_pcd):
@@ -151,6 +156,25 @@ class RGBRefLoss(torch.nn.Module):
                 mask_pcd_i = mask_pcd_i[:, idx_nearest].transpose(0, 1)
                 mask_i = mask_pcd_i * mask_dist_i
             #raise NotImplementedError
+            def vis_func(rgb, mask, name):
+                scale = 16
+                vis = rgb.cpu().detach().numpy()
+                flag = np.float64(mask.cpu().detach().numpy())
+                flag = np.tile(flag[:, None, None], (1, 1, 3))
+                vis = np.concatenate([flag, vis], axis=1)
+
+                H, W, _ = vis.shape
+                vis = np.tile(vis[:, None, :, None], (1, scale, 1, scale, 1))
+                vis = vis.reshape(H*scale, W*scale, 3)
+
+                vis_u8 = (vis * 255).astype(np.uint8)
+                imageio.imwrite(
+                    os.path.join("rgb_{}.png".format(name)), vis_u8,)
+            mask = mask_dist_i.squeeze()
+            if  rgb_i.shape[0] > 1:
+                vis_func(rgb_i, mask, 'pred')
+                vis_func(rgb_gt_i, mask, 'gt')
+
             loss_i = self.l1_loss(rgb_i, rgb_gt_i)
             if torch.sum(mask_i) > 0:
                 loss_i = torch.sum(loss_i * mask_i) / (3*torch.sum(mask_i))

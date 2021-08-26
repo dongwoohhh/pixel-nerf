@@ -17,14 +17,14 @@ class Trainer:
             train_dataset,
             batch_size=args.batch_size,
             shuffle=True,
-            num_workers=5,
+            num_workers=8,
             pin_memory=False,
         )
         self.test_data_loader = torch.utils.data.DataLoader(
             test_dataset,
             batch_size=min(args.batch_size, 16),
             shuffle=True,
-            num_workers=2,
+            num_workers=4,
             pin_memory=False,
         )
 
