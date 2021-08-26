@@ -66,7 +66,7 @@ class NeRFRenderer(torch.nn.Module):
         n_fine_depth=0,
         noise_std=0.0,
         depth_std=0.01,
-        weights_threshold=0.3,
+        weights_threshold=0.1,
         eval_batch_size=100000,
         white_bkgd=False,
         lindisp=False,

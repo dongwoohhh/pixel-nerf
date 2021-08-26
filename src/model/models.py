@@ -94,14 +94,7 @@ class PixelNeRFNet(torch.nn.Module):
         self.register_buffer("poses_ref", torch.empty(1, 3, 4), persistent=False)
         self.num_objs = 0
         self.num_views_per_obj = 1        
-        """
-         # Radiance Transformer
-        d_latent_transformer = 128
-        self.transformer_coarse = RadianceTransformer(d_q=self.code.d_out, d_k=d_latent+d_in,
-            n_dim=d_latent_transformer, n_head=1, n_layer=1)
-        self.transformer_fine = RadianceTransformer(d_q=self.code.d_out, d_k=d_latent+d_in,
-            n_dim=d_latent_transformer, n_head=1, n_layer=1)
-        """
+
         self.n_head = 4
         self.n_layer = 4
         d_latent_transformer = 256
@@ -152,7 +145,6 @@ class PixelNeRFNet(torch.nn.Module):
         else:
             focal = focal.clone()
         self.focal = focal.float()
-        self.focal[..., 1] *= -1.0
 
         if c is None:
             # Default principal point is center of image
@@ -238,7 +230,7 @@ class PixelNeRFNet(torch.nn.Module):
 
             if self.use_encoder:
                 # Grab encoder's latent code.
-                uv = -xyz[:, :, :2] / xyz[:, :, 2:]  # (SB, B, 2)
+                uv = xyz[:, :, :2] / xyz[:, :, 2:]  # (SB, B, 2)
                 uv *= repeat_interleave(
                     self.focal.unsqueeze(1), NS if self.focal.shape[0] > 1 else 1
                 )
@@ -300,7 +292,6 @@ class PixelNeRFNet(torch.nn.Module):
             sigma = mlp_output
             """
             # Run Radiance Transformer network.
-            #self.transformer_key = transformer_key
             if coarse:
                 transformer_output_rgb, transformer_output_sigma, transformer_latent, transformer_attn_prob = \
                     self.transformer_coarse(query=transformer_query, latent=transformer_key)
@@ -329,7 +320,7 @@ class PixelNeRFNet(torch.nn.Module):
         xyz_rot_ref = torch.matmul(poses_ref[:, :, :3, :3], xyz_ref)[..., 0]
         xyz_ref = xyz_rot_ref + poses_ref[:, :, :3, 3]
 
-        uv_ref = -xyz_ref[:, :, :2] / xyz_ref[:, :, 2:]
+        uv_ref = xyz_ref[:, :, :2] / xyz_ref[:, :, 2:]
         uv_ref *= self.focal[index_batch].unsqueeze(1).repeat(1, NR, 1)
         uv_ref += self.c[index_batch].unsqueeze(1).repeat(1, NR, 1)
 

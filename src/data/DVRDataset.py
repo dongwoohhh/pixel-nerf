@@ -80,6 +80,15 @@ class DVRDataset(torch.utils.data.Dataset):
         )
 
         self.image_size = image_size
+        self._coord_trans_world = torch.tensor(
+                [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]],
+                dtype=torch.float32,
+        )
+        self._coord_trans_cam = torch.tensor(
+            [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]],
+            dtype=torch.float32,
+        )
+        """
         if sub_format == "dtu":
             self._coord_trans_world = torch.tensor(
                 [[1, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]],
@@ -98,6 +107,7 @@ class DVRDataset(torch.utils.data.Dataset):
                 [[1, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]],
                 dtype=torch.float32,
             )
+        """
         self.sub_format = sub_format
         self.scale_focal = scale_focal
         self.max_imgs = max_imgs

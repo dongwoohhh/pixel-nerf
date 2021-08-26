@@ -18,14 +18,14 @@ class Trainer:
             batch_size=args.batch_size,
             shuffle=True,
             num_workers=8,
-            pin_memory=False,
+            pin_memory=True,
         )
         self.test_data_loader = torch.utils.data.DataLoader(
             test_dataset,
             batch_size=min(args.batch_size, 16),
             shuffle=True,
             num_workers=4,
-            pin_memory=False,
+            pin_memory=True,
         )
 
         self.num_total_batches = len(self.train_dataset)
@@ -149,9 +149,15 @@ class Trainer:
         test_data_iter = data_loop(self.test_data_loader)
 
         step_id = self.start_iter_id
+        n_batch = self.num_epoch_repeats*len(self.train_data_loader)
+        epoch = step_id // n_batch
+        batch = step_id % n_batch #step_id - epoch*n_batch
+
+        print("Resumed epoch: {}, batch: {}".format(epoch, batch))
 
         progress = tqdm.tqdm(bar_format="[{rate_fmt}] ")
-        for epoch in range(self.num_epochs):
+
+        while(epoch<self.num_epochs):
             self.writer.add_scalar(
                 "lr", self.optim.param_groups[0]["lr"], global_step=step_id
             )
@@ -242,5 +248,6 @@ class Trainer:
                     progress.update(1)
                 if self.args.max_step < step_id:
                     break
+            epoch +=1
             if self.lr_scheduler is not None:
                 self.lr_scheduler.step()
