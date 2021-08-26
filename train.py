@@ -71,6 +71,13 @@ def extra_args(parser):
         default=200000,
         help="Step to stop using bbox sampling",
     )
+    parser.add_argument(
+        "--vis_source",
+        "-VS",
+        type=str,
+        default=None,
+        help="Source view(s) for each object. Alternatively, specify -L to viewlist file and leave this blank.",
+    )
     return parser
     
 
@@ -297,9 +304,15 @@ class PixelNeRFTrainer(trainlib.Trainer):
         )  # (NV, H, W, 8)
         images_0to1 = images * 0.5 + 0.5  # (NV, 3, H, W)
 
+        
         curr_nviews = nviews[torch.randint(0, len(nviews), (1,)).item()]
-        views_src = np.sort(np.random.choice(NV, curr_nviews, replace=False))
+
+        if self.args.vis_source is None:
+            views_src = np.sort(np.random.choice(NV, curr_nviews, replace=False))
+        else:
+            views_src = np.array(sorted(list(map(int, args.vis_source.split()))))
         view_dest = np.random.randint(0, NV - curr_nviews)
+
         for vs in range(curr_nviews):
             view_dest += view_dest >= views_src[vs]
         views_src = torch.from_numpy(views_src)
