@@ -109,7 +109,7 @@ class RGBRefLoss(torch.nn.Module):
         super().__init__()
         self.l1_loss = torch.nn.L1Loss(reduction="none")
         self.bce_loss = torch.nn.BCELoss(reduction="none")
-        self.thr_dist = 0.01
+        self.thr_dist = 0.02
         self.n_supervised_heads = 1
         self.register_buffer("scale", torch.empty(2, dtype=torch.float32), persistent=False)
     def forward(self, rgb_ref, uv_ref, points_ref, attn_prob, idx_src, images, xyz_pcd, mask_pcd):
