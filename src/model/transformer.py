@@ -27,8 +27,6 @@ class RadianceTransformer2(nn.Module):
         #nn.init.normal_(self.cls_token, std=0.02)
         # Linear Input latent projection
         self.linear1 = nn.Linear(d_k, n_dim)
-        nn.init.constant_(self.linear1.bias, 0.0)
-        nn.init.kaiming_normal_(self.linear1.weight, a=0, mode="fan_in")
 
         # Transformer for self-attention of src latent vector.
         for i in range(n_layer):
@@ -38,13 +36,8 @@ class RadianceTransformer2(nn.Module):
         # Input slf_attn layer.
         self.attn_from_ref_to_src = MultiHeadAttentionLayer(n_query=d_q, n_key=n_dim, n_value=n_dim, n_dim=n_dim, n_head=n_head)
 
-        self.layer_color = nn.Linear(n_dim, 3)
-        nn.init.constant_(self.layer_color.bias, 0.0)
-        nn.init.kaiming_normal_(self.layer_color.weight, a=0, mode="fan_in")
-        
+        self.layer_color = nn.Linear(n_dim, 3)        
         self.layer_sigma = nn.Linear(n_dim, 1)
-        nn.init.constant_(self.layer_sigma.bias, 0.0)
-        nn.init.kaiming_normal_(self.layer_sigma.weight, a=0, mode="fan_in")
 
         self.activation = nn.ReLU()
 
@@ -112,20 +105,10 @@ class MultiHeadAttentionLayer(nn.Module):
         self.value_fc_layer = [] #nn.Linear(n_dim, n_dim)
 
         self.query_fc_layer = nn.Linear(n_query, n_dim*n_head)
-        nn.init.constant_(self.query_fc_layer.bias, 0.0)
-        nn.init.kaiming_normal_(self.query_fc_layer.weight, a=0, mode="fan_in")
-
         self.key_fc_layer = nn.Linear(n_key, n_dim*n_head)
-        nn.init.constant_(self.key_fc_layer.bias, 0.0)
-        nn.init.kaiming_normal_(self.key_fc_layer.weight, a=0, mode="fan_in")
-        
         self.value_fc_layer = nn.Linear(n_value, n_dim*n_head)
-        nn.init.constant_(self.value_fc_layer.bias, 0.0)
-        nn.init.kaiming_normal_(self.value_fc_layer.weight, a=0, mode="fan_in")
-        
+
         self.fc_layer = nn.Linear(n_dim*n_head, n_dim)
-        nn.init.constant_(self.fc_layer.bias, 0.0)
-        nn.init.kaiming_normal_(self.fc_layer.weight, a=0, mode="fan_in")
 
     def forward(self, query, key, value, mask=None):
         
@@ -173,12 +156,7 @@ class PositionWiseFeedForwardLayer(nn.Module):
     def __init__(self, n_dim_in, n_dim1, n_dim2):
         super(PositionWiseFeedForwardLayer, self).__init__()
         self.first_fc_layer = nn.Linear(n_dim_in, n_dim1)
-        nn.init.constant_(self.first_fc_layer.bias, 0.0)
-        nn.init.kaiming_normal_(self.first_fc_layer.weight, a=0, mode="fan_in")
-        
         self.second_fc_layer = nn.Linear(n_dim1, n_dim2)
-        nn.init.constant_(self.second_fc_layer.bias, 0.0)
-        nn.init.kaiming_normal_(self.second_fc_layer.weight, a=0, mode="fan_in")
 
         self.dropout = nn.Dropout(p=0.1)
 
