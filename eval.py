@@ -262,8 +262,8 @@ with torch.no_grad():
                 .reshape(-1, 8)
                 .to(device=device)
             )  # ((NV[-NS])*H*W, 8)
-
-            index_target = torch.arange(0, NV)[target_view_mask].reshape(NV-NS, 1, 1).repeat(1, H, W)
+            NT = torch.sum(target_view_mask)
+            index_target = torch.arange(0, NV)[target_view_mask].reshape(NT, 1, 1).repeat(1, H, W)
             index_target = index_target.contiguous().reshape(-1)
             index_target = index_target.to(device=device)
 
