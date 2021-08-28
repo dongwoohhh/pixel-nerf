@@ -48,7 +48,7 @@ class RadianceTransformer2(nn.Module):
         #out = torch.cat([out, cls_token], dim=1)
 
         attn_prob_list = []
-        for layer in self.layers:
+        for i, layer in enumerate(self.layers):
             out = layer(out, mask)
             attn_prob_list.append(layer.multi_head_attention_layer.attention_prob)
         attn_prob_list = torch.stack(attn_prob_list, dim=1)

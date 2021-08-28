@@ -204,7 +204,7 @@ with torch.no_grad():
             print("(skip)")
             continue
         images = data["images"][0]  # (NV, 3, H, W)
-
+        depthmap = data["depthmap"][0]
         NV, _, H, W = images.shape
 
         if args.scale != 1.0:
@@ -280,6 +280,7 @@ with torch.no_grad():
             src_poses.unsqueeze(0),
             focal,
             c=c,
+            depthmap=depthmap[src_view_mask].to(device=device).unsqueeze(0)
         )
 
         all_rgb, all_depth = [], []
