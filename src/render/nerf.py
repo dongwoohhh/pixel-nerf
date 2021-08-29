@@ -283,15 +283,14 @@ class NeRFRenderer(torch.nn.Module):
             depth_final = torch.sum(weights * z_samp, -1)  # (B)
 
             NR = model.poses_ref.shape[1]
-            NL = model.n_layer
-            NH = model.n_head
             NS = model.n_views
+            NL = model.n_latent
             
             if self.training:
                 rgb_ref_all = torch.zeros((sb,B*K//sb, NR, 3), device=rgb_final.device)
                 uv_ref_all = -1 * torch.ones((sb,B*K//sb, NR, 2), device=rgb_final.device)
                 points_ref_all = torch.zeros((sb,B*K//sb, 3), device=rgb_final.device)
-                attn_prob_all = torch.zeros((sb,B*K//sb, NL, NH, NS, NS), device=rgb_final.device)
+                attn_prob_all = torch.zeros((sb,B*K//sb, 1, 1, NL, NS), device=rgb_final.device)
             
                 #with torch.no_grad():
                 weights_ref = weights.reshape(-1)
@@ -311,7 +310,7 @@ class NeRFRenderer(torch.nn.Module):
                 
 
                 transformer_latents_ref = torch.masked_select(transformer_latents.reshape(B*K, -1), mask_ref).reshape(-1, NV, NC)
-                transformer_attn_probs_ref = torch.masked_select(transformer_attn_probs.reshape(B*K, -1), mask_ref).reshape(-1, NL*NH*NS*NS)
+                transformer_attn_probs_ref = torch.masked_select(transformer_attn_probs.reshape(B*K, -1), mask_ref).reshape(-1, NL*NS)
 
                 if cond_ref:
                     rgb_ref, uv_ref = model.forward_ref(points_ref, viewdirs_ref, index_batch_ref, transformer_latents_ref, coarse)              
@@ -321,7 +320,7 @@ class NeRFRenderer(torch.nn.Module):
                         rgb_ref_all[i, :n_batch_i] = torch.masked_select(rgb_ref.reshape(-1, NR*3), mask_i.unsqueeze(-1)).reshape(n_batch_i, NR, 3)
                         uv_ref_all[i, :n_batch_i] = torch.masked_select(uv_ref.reshape(-1, NR*2), mask_i.unsqueeze(-1)).reshape(n_batch_i, NR, 2)
                         points_ref_all[i, :n_batch_i] = torch.masked_select(points_ref, mask_i.unsqueeze(-1)).reshape(n_batch_i, 3)
-                        attn_prob_all[i, :n_batch_i] = torch.masked_select(transformer_attn_probs_ref, mask_i.unsqueeze(-1)).reshape(n_batch_i, NL, NH, NS, NS)
+                        attn_prob_all[i, :n_batch_i] = torch.masked_select(transformer_attn_probs_ref, mask_i.unsqueeze(-1)).reshape(n_batch_i, 1, 1, NL, NS)
             else:
                 rgb_ref_all = uv_ref_all = points_ref_all = attn_prob_all = None
                 

@@ -116,7 +116,7 @@ class RGBRefLoss(torch.nn.Module):
         SB, B, NR, _ = rgb_ref.shape
         _, _, _ , H, W = images.shape
         _, NS = idx_src.shape
-        _, _, NL, NH, _, _ = attn_prob.shape
+        _, _, _, _, NL, _ = attn_prob.shape
         image_size = (float(W), float(H))
 
         uv_ref1 = uv_ref.transpose(1, 2).reshape(SB*NR, B, 2)
@@ -165,7 +165,7 @@ class RGBRefLoss(torch.nn.Module):
                 mask_i = mask_pcd_i * mask_dist_i
                 mask_src_i = mask_src_i * mask_dist_i * mask_all_zero_i
                 mask_src_i = mask_src_i.squeeze(-1)[:, None, None, None, :]
-                mask_src_i = mask_src_i.repeat(1, NL, self.n_supervised_heads, NS, 1)
+                mask_src_i = mask_src_i.repeat(1, 1, 1, NL, 1)
 
             loss_rgb_ref_i = self.l1_loss(rgb_i, rgb_gt_i)
 

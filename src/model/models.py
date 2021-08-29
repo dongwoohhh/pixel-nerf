@@ -4,7 +4,7 @@ Main model implementation
 from numpy.core.fromnumeric import repeat
 import torch
 from .encoder import ImageEncoder
-from .transformer import RadianceTransformer2
+from .transformer import RadianceTransformer2, Perceiver
 from .code import PositionalEncoding
 from .model_util import make_encoder, make_mlp
 import torch.autograd.profiler as profiler
@@ -73,12 +73,7 @@ class PixelNeRFNet(torch.nn.Module):
         d_out = 1
 
         self.latent_size = self.encoder.latent_size
-        """
-        self.mlp_coarse = make_mlp(conf["mlp_coarse"], d_in, d_latent, d_out=d_out)
-        self.mlp_fine = make_mlp(
-            conf["mlp_fine"], d_in, d_latent, d_out=d_out, allow_empty=True
-        )
-        """
+
         # Note: this is world -> camera, and bottom row is omitted
         self.register_buffer("poses", torch.empty(1, 3, 4), persistent=False)
         self.register_buffer("image_shape", torch.empty(2), persistent=False)
@@ -100,13 +95,24 @@ class PixelNeRFNet(torch.nn.Module):
         self.register_buffer('scale', torch.empty(2), persistent=False)
 
         self.n_head = 4
-        self.n_layer = 4
-        d_latent_transformer = 256
+        self.n_layer = 2
+        d_perceiver = 256
+        d_color = self.code.d_out
+        self.n_latent = 4
+        self.perceiver_coarse = Perceiver(
+            d_input=d_latent+d_in, d_latent=d_perceiver, d_color=d_color,
+            n_latent=self.n_latent, n_head=self.n_head, n_layer=self.n_layer,
+        )
+        self.perceiver_fine = Perceiver(
+            d_input=d_latent+d_in, d_latent=d_perceiver, d_color=d_color,
+            n_latent=self.n_latent, n_head=self.n_head, n_layer=self.n_layer,
+        )
+        """
         self.transformer_coarse = RadianceTransformer2(d_q=self.code.d_out, d_k=d_latent+d_in,
             n_dim=d_latent_transformer, n_head=self.n_head, n_layer=self.n_layer)
         self.transformer_fine = RadianceTransformer2(d_q=self.code.d_out, d_k=d_latent+d_in,
             n_dim=d_latent_transformer, n_head=self.n_head, n_layer=self.n_layer)
-
+        """
 
     def encode(self, images, poses, focal, z_bounds=None, c=None, depthmap=None):
         """
@@ -268,60 +274,15 @@ class PixelNeRFNet(torch.nn.Module):
                                          torch.logical_not(mask_occlusion),
                                          mask_occlusion)
 
-            mask_occlusion = mask_occlusion.repeat(1, NS, 1)
-            
-            """
-                if self.stop_encoder_grad:
-                    latent = latent.detach()
-                latent = latent.transpose(1, 2).reshape(
-                    -1, self.latent_size
-                )  # (SB * NS * B, latent)
+            mask_occlusion = mask_occlusion.repeat(1, self.n_latent, 1)
 
-                if self.d_in == 0:
-                    # z_feature not needed
-                    mlp_input = latent
-                else:
-                    mlp_input = torch.cat((latent, z_feature), dim=-1)
-
-            if self.use_global_encoder:
-                # Concat global latent code if enabled
-                global_latent = self.global_encoder.latent
-                assert mlp_input.shape[0] % global_latent.shape[0] == 0
-                num_repeats = mlp_input.shape[0] // global_latent.shape[0]
-                global_latent = repeat_interleave(global_latent, num_repeats)
-                mlp_input = torch.cat((global_latent, mlp_input), dim=-1)
-            # Camera frustum culling stuff, currently disabled
-            combine_index = None
-            dim_size = None
-
-            # Run main NeRF network
-            if coarse or self.mlp_fine is None:
-                mlp_output = self.mlp_coarse(
-                    mlp_input,
-                    combine_inner_dims=(self.num_views_per_obj, B),
-                    combine_index=combine_index,
-                    dim_size=dim_size,
-                )
-            else:
-                mlp_output = self.mlp_fine(
-                    mlp_input,
-                    combine_inner_dims=(self.num_views_per_obj, B),
-                    combine_index=combine_index,
-                    dim_size=dim_size,
-                )
-
-            # Interpret the output
-            mlp_output = mlp_output.reshape(-1, B, self.d_out)
-
-            sigma = mlp_output
-            """
             # Run Radiance Transformer network.
             if coarse:
                 transformer_output_rgb, transformer_output_sigma, transformer_latent, transformer_attn_prob = \
-                    self.transformer_coarse(query=transformer_query, latent=transformer_key, mask=mask_occlusion)
+                    self.perceiver_coarse(input=transformer_key, query_color=transformer_query , mask=mask_occlusion)
             else:
                 transformer_output_rgb, transformer_output_sigma, transformer_latent, transformer_attn_prob = \
-                    self.transformer_fine(query=transformer_query, latent=transformer_key, mask=mask_occlusion)
+                    self.perceiver_fine(input=transformer_key, query_color=transformer_query , mask=mask_occlusion)
             
             rgb = transformer_output_rgb[:, 0].reshape(SB, B, 3)
             sigma = transformer_output_sigma.reshape(SB, B, 1)
@@ -329,8 +290,8 @@ class PixelNeRFNet(torch.nn.Module):
             rgb = torch.sigmoid(rgb)
             sigma = torch.relu(sigma)
 
-            transformer_latent = transformer_latent.reshape(SB, B, NS, -1)
-            transformer_attn_prob = transformer_attn_prob.reshape(SB, B, self.n_layer, self.n_head, NS, NS)
+            transformer_latent = transformer_latent.reshape(SB, B, self.n_latent, -1)
+            transformer_attn_prob = transformer_attn_prob.reshape(SB, B, 1, 1, self.n_latent, NS)
 
         return rgb, sigma, transformer_latent, transformer_attn_prob
 
@@ -357,16 +318,16 @@ class PixelNeRFNet(torch.nn.Module):
         if coarse:
             #transformer_output_rgb, _ = self.transformer_coarse(query=transformer_query, latent=transformer_key)
             transformer_output_rgb = \
-                self.transformer_coarse.forward_attention_to_source(query=transformer_query, 
-                                                                    key=transformer_latent,
-                                                                    value=transformer_latent)
+                self.perceiver_coarse.forward_attention_to_source(query=transformer_query, 
+                                                                  key=transformer_latent,
+                                                                  value=transformer_latent)
         else:
             #transformer_output_rgb, _ = self.transformer_fine(query=transformer_query, latent=transformer_key)
             transformer_output_rgb = \
-                self.transformer_fine.forward_attention_to_source(query=transformer_query, 
-                                                                  key=transformer_latent,
-                                                                  value=transformer_latent)
-
+                self.perceiver_fine.forward_attention_to_source(query=transformer_query, 
+                                                                key=transformer_latent,
+                                                                value=transformer_latent)
+        raise NotImplementedError
         rgb_ref = transformer_output_rgb
         rgb_ref = torch.sigmoid(rgb_ref)
 

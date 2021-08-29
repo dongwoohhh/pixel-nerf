@@ -5,6 +5,81 @@ import torch.nn.functional as F
 import numpy as np
 
 
+class Perceiver(nn.Module):
+    """
+    Represents Perceiver
+    """
+
+    def __init__(
+        self,
+        d_input,
+        d_latent,
+        d_color,
+        n_latent,
+        n_head,
+        n_layer,
+        n_repeats=None,
+    ):
+        super(Perceiver, self).__init__()
+
+        self.latent_init = nn.Parameter(torch.zeros(1, n_latent, d_latent))
+        nn.init.normal_(self.latent_init, std=0.02)
+
+        self.n_layer = n_layer
+
+        # Cross-attention layer.
+        self.cross_attn1 = MultiHeadAttentionLayer(n_query=d_latent, n_key=d_input, n_value=d_input, n_dim=d_latent, n_head=1)
+        self.cross_attn2 = MultiHeadAttentionLayer(n_query=d_latent, n_key=d_input, n_value=d_input, n_dim=d_latent, n_head=1)
+
+        # Transformer.
+        self.layers = []
+        for i in range(n_layer):
+            self.layers.append(TransformerEncoderLayer(d_latent, n_head))
+        self.layers = nn.ModuleList(self.layers)
+
+        # Decoder.
+        d_decoder = 32
+        self.decoder_color = MultiHeadAttentionLayer(n_query=d_color, n_key=d_latent, n_value=d_latent, n_dim=d_decoder, n_head=1)
+
+        self.layer_color = nn.Linear(d_decoder, 3)
+        self.layer_sigma = nn.Linear(d_latent, 1)
+
+
+        self.activation = nn.ReLU()
+        
+    def forward(self, input, query_color, mask):
+        byte = input
+        # Cross-attention 1.
+        latent = self.latent_init.repeat(byte.shape[0], 1, 1)
+        latent = self.cross_attn1(query=latent, key=byte, value=byte, mask=mask)
+
+        # Latent transformer.
+        for i, layer in enumerate(self.layers):
+            latent = layer(latent, mask=None)
+        
+        latent = self.cross_attn2(query=latent, key=byte, value=byte, mask=mask)
+        attn_prob_list = torch.stack([self.cross_attn2.attention_prob])
+
+        # Latent transformer.
+        for i, layer in enumerate(self.layers):
+            latent = layer(latent, mask=None)
+
+        sigma = torch.max(latent, dim=1)[0]
+        sigma = self.layer_sigma(self.activation(sigma))
+
+
+        color = self.forward_attention_to_source(query=query_color, key=latent, value=latent)
+
+        return color, sigma, latent, attn_prob_list
+
+    def forward_attention_to_source(self, query, key, value):
+        out = self.decoder_color(query, key, value)
+        color = self.layer_color(self.activation(out))
+
+        return color
+
+    
+
 class RadianceTransformer2(nn.Module):
     """
     Represents RadianceTransformer2
@@ -30,9 +105,9 @@ class RadianceTransformer2(nn.Module):
 
         # Transformer for self-attention of src latent vector.
         for i in range(n_layer):
-                self.layers.append(TransformerEncoderLayer(n_dim, n_head))
-
+            self.layers.append(TransformerEncoderLayer(n_dim, n_head))
         self.layers = nn.ModuleList(self.layers)
+
         # Input slf_attn layer.
         self.attn_from_ref_to_src = MultiHeadAttentionLayer(n_query=d_q, n_key=n_dim, n_value=n_dim, n_dim=n_dim, n_head=n_head)
 
@@ -113,6 +188,8 @@ class MultiHeadAttentionLayer(nn.Module):
 
         self.fc_layer = nn.Linear(n_dim*n_head, n_dim)
 
+        self.activation = nn.ReLU()
+
     def forward(self, query, key, value, mask=None):
         
         # query's shape: (B, N_ref, 2)
@@ -133,7 +210,7 @@ class MultiHeadAttentionLayer(nn.Module):
         out = self.calculate_attention(query, key, value, mask)
         out = out.transpose(1,2)  # (B, N_ref, H, D)
         out = out.contiguous().view(n_batch, -1, self.n_head*self.n_dim)
-        out = self.fc_layer(out)  # (B, N_ref, D)
+        out = self.fc_layer(self.activation(out))  # (B, N_ref, D)
 
         return out
 
