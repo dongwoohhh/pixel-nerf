@@ -138,7 +138,7 @@ def unproj_map(width, height, f, c=None, device="cpu"):
     X = X.to(device=device) / float(f[0])
     Y = Y.to(device=device) / float(f[1])
     Z = torch.ones_like(X)
-    unproj = torch.stack((X, -Y, -Z), dim=-1)
+    unproj = torch.stack((X, Y, Z), dim=-1)
     unproj /= torch.norm(unproj, dim=-1).unsqueeze(-1)
     return unproj
 

@@ -147,7 +147,7 @@ class PixelNeRFNet(torch.nn.Module):
         else:
             focal = focal.clone()
         self.focal = focal.float()
-        self.focal[..., 1] *= -1.0
+        #self.focal[..., 1] *= -1.0
 
         if c is None:
             # Default principal point is center of image
@@ -233,7 +233,7 @@ class PixelNeRFNet(torch.nn.Module):
 
             if self.use_encoder:
                 # Grab encoder's latent code.
-                uv = -xyz[:, :, :2] / xyz[:, :, 2:]  # (SB, B, 2)
+                uv = xyz[:, :, :2] / xyz[:, :, 2:]  # (SB, B, 2)
                 uv *= repeat_interleave(
                     self.focal.unsqueeze(1), NS if self.focal.shape[0] > 1 else 1
                 )
@@ -321,7 +321,7 @@ class PixelNeRFNet(torch.nn.Module):
         xyz_rot_ref = torch.matmul(poses_ref[:, :, :3, :3], xyz_ref)[..., 0]
         xyz_ref = xyz_rot_ref + poses_ref[:, :, :3, 3]
 
-        uv_ref = -xyz_ref[:, :, :2] / xyz_ref[:, :, 2:]
+        uv_ref = xyz_ref[:, :, :2] / xyz_ref[:, :, 2:]
         uv_ref *= self.focal[index_batch].unsqueeze(1).repeat(1, NR, 1)
         uv_ref += self.c[index_batch].unsqueeze(1).repeat(1, NR, 1)
 

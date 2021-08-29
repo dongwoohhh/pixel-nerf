@@ -82,22 +82,14 @@ class DVRDataset(torch.utils.data.Dataset):
         self.image_size = image_size
         if sub_format == "dtu":
             self._coord_trans_world = torch.tensor(
-                [[1, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]],
+                [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]],
                 dtype=torch.float32,
             )
             self._coord_trans_cam = torch.tensor(
-                [[1, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]],
+                [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]],
                 dtype=torch.float32,
             )
-        else:
-            self._coord_trans_world = torch.tensor(
-                [[1, 0, 0, 0], [0, 0, -1, 0], [0, 1, 0, 0], [0, 0, 0, 1]],
-                dtype=torch.float32,
-            )
-            self._coord_trans_cam = torch.tensor(
-                [[1, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]],
-                dtype=torch.float32,
-            )
+        
         self.sub_format = sub_format
         self.scale_focal = scale_focal
         self.max_imgs = max_imgs
@@ -294,7 +286,7 @@ class DVRDataset(torch.utils.data.Dataset):
                 points = points.T
 
                 # Get color of points from multi-view images.
-                focal[..., 1] *= -1.0
+                #focal[..., 1] *= -1.0
 
                 rot = all_poses[:, :3, :3].transpose(2, 1)
                 trans = - torch.matmul(rot, all_poses[:, :3, 3:])
@@ -306,7 +298,7 @@ class DVRDataset(torch.utils.data.Dataset):
                 xyz = xyz.transpose(2, 1)
                 depth = - xyz[:, :, 2:3]
                 
-                uv = - xyz[:, :, :2] / xyz[:, :, 2:3]        
+                uv =  xyz[:, :, :2] / xyz[:, :, 2:3]        
                 uv *= focal[None, None, :]
                 uv += c[None, None, :]
 
