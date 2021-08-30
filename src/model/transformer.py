@@ -66,7 +66,7 @@ class RadianceTransformer2(nn.Module):
         #color = self.forward_attention_to_source(query=query, key=out_latent, value=out_latent)
         color = self.forward_attention_to_source(query=query, key=out, value=out)
 
-        return color, sigma, out, attn_prob_list
+        return color, sigma, attn_prob_list
 
     def forward_attention_to_source(self, query, key, value):
         out = self.attn_from_ref_to_src(query, key, value)

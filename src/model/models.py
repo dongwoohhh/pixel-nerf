@@ -293,10 +293,10 @@ class PixelNeRFNet(torch.nn.Module):
             """
             # Run Radiance Transformer network.
             if coarse:
-                transformer_output_rgb, transformer_output_sigma, transformer_latent, transformer_attn_prob = \
+                transformer_output_rgb, transformer_output_sigma, transformer_attn_prob = \
                     self.transformer_coarse(query=transformer_query, latent=transformer_key)
             else:
-                transformer_output_rgb, transformer_output_sigma, transformer_latent, transformer_attn_prob = \
+                transformer_output_rgb, transformer_output_sigma, transformer_attn_prob = \
                     self.transformer_fine(query=transformer_query, latent=transformer_key)
             
             rgb = transformer_output_rgb[:, 0].reshape(SB, B, 3)
@@ -305,12 +305,13 @@ class PixelNeRFNet(torch.nn.Module):
             rgb = torch.sigmoid(rgb)
             sigma = torch.relu(sigma)
 
-            transformer_latent = transformer_latent.reshape(SB, B, NS, -1)
+            #transformer_latent = transformer_latent.reshape(SB, B, NS, -1)
+            transformer_key = transformer_key.reshape(SB, B, NS, -1)
             transformer_attn_prob = transformer_attn_prob.reshape(SB, B, self.n_layer, self.n_head, NS, NS)
 
-        return rgb, sigma, transformer_latent, transformer_attn_prob
+        return rgb, sigma, transformer_key, transformer_attn_prob
 
-    def forward_ref(self, xyz, viewdirs, index_batch, transformer_latent, coarse):
+    def forward_ref(self, xyz, viewdirs, index_batch, transformer_key, coarse):
         B = viewdirs.shape[0]
         _, NR, _, _ = self.poses_ref.shape
         
@@ -332,16 +333,12 @@ class PixelNeRFNet(torch.nn.Module):
 
         if coarse:
             #transformer_output_rgb, _ = self.transformer_coarse(query=transformer_query, latent=transformer_key)
-            transformer_output_rgb = \
-                self.transformer_coarse.forward_attention_to_source(query=transformer_query, 
-                                                                    key=transformer_latent,
-                                                                    value=transformer_latent)
+            transformer_output_rgb, _, _ = self.transformer_coarse(
+                query=transformer_query, latent=transformer_key)
         else:
             #transformer_output_rgb, _ = self.transformer_fine(query=transformer_query, latent=transformer_key)
-            transformer_output_rgb = \
-                self.transformer_fine.forward_attention_to_source(query=transformer_query, 
-                                                                  key=transformer_latent,
-                                                                  value=transformer_latent)
+            transformer_output_rgb, _, _ = self.transformer_fine(
+                query=transformer_query, latent=transformer_key)
 
         rgb_ref = transformer_output_rgb
         rgb_ref = torch.sigmoid(rgb_ref)
