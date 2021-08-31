@@ -4,7 +4,7 @@ Main model implementation
 from numpy.core.fromnumeric import repeat
 import torch
 from .encoder import ImageEncoder
-from .transformer import RadianceTransformer, RadianceTransformer2
+from .transformer import RadianceTransformer, RadianceTransformer2, RadianceTransformer3
 from .code import PositionalEncoding
 from .model_util import make_encoder, make_mlp
 import torch.autograd.profiler as profiler
@@ -71,12 +71,13 @@ class PixelNeRFNet(torch.nn.Module):
             d_latent += self.global_latent_size
 
         d_out = 1
-
         self.latent_size = self.encoder.latent_size
+        """
         self.mlp_coarse = make_mlp(conf["mlp_coarse"], d_in, d_latent, d_out=d_out)
         self.mlp_fine = make_mlp(
             conf["mlp_fine"], d_in, d_latent, d_out=d_out, allow_empty=True
         )
+        """
         # Note: this is world -> camera, and bottom row is omitted
         self.register_buffer("poses", torch.empty(1, 3, 4), persistent=False)
         self.register_buffer("image_shape", torch.empty(2), persistent=False)
@@ -92,19 +93,26 @@ class PixelNeRFNet(torch.nn.Module):
         self.register_buffer("poses_ref", torch.empty(1, 3, 4), persistent=False)
         self.num_objs = 0
         self.num_views_per_obj = 1        
-        """
-         # Radiance Transformer
-        d_latent_transformer = 128
-        self.transformer_coarse = RadianceTransformer(d_q=self.code.d_out, d_k=d_latent+d_in,
-            n_dim=d_latent_transformer, n_head=1, n_layer=1)
-        self.transformer_fine = RadianceTransformer(d_q=self.code.d_out, d_k=d_latent+d_in,
-            n_dim=d_latent_transformer, n_head=1, n_layer=1)
-        """
-        d_latent_transformer = 256
-        self.transformer_coarse = RadianceTransformer2(d_q=self.code.d_out, d_k=d_latent+d_in,
-            n_dim=d_latent_transformer, n_head=4, n_layer=4)
-        self.transformer_fine = RadianceTransformer2(d_q=self.code.d_out, d_k=d_latent+d_in,
-            n_dim=d_latent_transformer, n_head=4, n_layer=4)
+        
+        # Radiance Transformer
+        d_embed = 128
+        n_head=4
+        d_color=64
+        iteration=4
+        self.transformer_coarse = RadianceTransformer3(
+            n_head=n_head,
+            d_input=self.latent_size+d_in,
+            d_embed=d_embed,
+            d_view=self.code.d_out,
+            d_color=d_color,
+            iteration=iteration,)
+        self.transformer_fine = RadianceTransformer3(
+            n_head=n_head,
+            d_input=self.latent_size+d_in,
+            d_embed=d_embed,
+            d_view=self.code.d_out,
+            d_color=d_color,
+            iteration=iteration,)
 
     def encode(self, images, poses, focal, z_bounds=None, c=None):
         """
@@ -296,10 +304,10 @@ class PixelNeRFNet(torch.nn.Module):
             """
             # Run Radiance Transformer network.
             #self.transformer_key = transformer_key
-            if coarse or self.mlp_fine is None:
-                transformer_output_rgb, transformer_output_sigma = self.transformer_coarse(query=transformer_query, latent=transformer_key)
+            if coarse:
+                transformer_output_rgb, transformer_output_sigma = self.transformer_coarse(input=transformer_key, view_dir=transformer_query)
             else:
-                transformer_output_rgb, transformer_output_sigma = self.transformer_fine(query=transformer_query, latent=transformer_key)
+                transformer_output_rgb, transformer_output_sigma = self.transformer_fine(input=transformer_key, view_dir=transformer_query)
             
             rgb = transformer_output_rgb[:, 0].reshape(SB, B, 3)
             sigma = transformer_output_sigma.reshape(SB, B, 1)
@@ -332,9 +340,9 @@ class PixelNeRFNet(torch.nn.Module):
         transformer_query = transformer_query.reshape(B, NR, -1)
 
         if coarse:
-            transformer_output_rgb, _ = self.transformer_coarse(query=transformer_query, latent=transformer_key)
+            transformer_output_rgb, _ = self.transformer_coarse(input=transformer_key, view_dir=transformer_query)
         else:
-            transformer_output_rgb, _ = self.transformer_fine(query=transformer_query, latent=transformer_key)
+            transformer_output_rgb, _ = self.transformer_fine(input=transformer_key, view_dir=transformer_query)
 
         rgb_ref = transformer_output_rgb
         rgb_ref = torch.sigmoid(rgb_ref)

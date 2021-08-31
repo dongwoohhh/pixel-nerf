@@ -5,6 +5,125 @@ import torch.nn.functional as F
 import numpy as np
 import util
 
+class RadianceTransformer3(nn.Module):
+    """
+    Represents RadianceTransformer2
+    """
+    def __init__(
+        self,
+        n_head,
+        d_input,
+        d_embed,
+        d_view,
+        d_color,
+        iteration,
+    ):
+        super(RadianceTransformer3, self).__init__()
+        self.iteration = iteration
+        
+        self.linear_init = nn.Linear(d_input, d_embed)
+
+        self.cross_attention_backbone = CrossAttentionLayer(
+            d_query=d_embed, d_key=d_embed, d_value=d_embed, d_embed=d_embed, n_head=n_head)
+
+        self.cross_attention_color = MultiHeadAttentionLayer(
+            n_query=d_view, n_key=d_embed, n_value=d_embed, n_dim=d_color, n_head=n_head
+        )
+
+        self.layer_color = nn.Linear(d_color, 3)
+        self.layer_sigma = nn.Linear(d_embed, 1)
+
+        self.activation = nn.ReLU()        
+        
+    def forward(self, input, view_dir):
+        byte = self.linear_init(input)
+        byte = self.activation(byte)
+        latent_init = byte.mean(dim=1, keepdim=True)
+
+        latent = latent_init
+        for i in range(self.iteration):
+            if i < self.iteration - 1:
+                _, latent = self.cross_attention_backbone(query=latent, key=byte, value=byte)
+            else:
+                latent_multihead, latent = self.cross_attention_backbone(query=latent, key=byte, value=byte)
+        color = self.cross_attention_color(query=view_dir, key=latent_multihead, value=latent_multihead)
+
+        sigma = self.layer_sigma(self.activation(latent))
+        color = self.layer_color(self.activation(color))
+
+        return color, sigma
+
+class CrossAttentionLayer(nn.Module):
+    def __init__(self, d_query, d_key, d_value, d_embed, n_head):
+        super(CrossAttentionLayer, self).__init__()
+        self.d_embed = d_embed
+        self.n_head = n_head
+        # cross attention.
+        self.query_fc_layer = nn.Linear(d_query, d_embed*n_head)
+        self.key_fc_layer = nn.Linear(d_key, d_embed*n_head)
+        self.value_fc_layer = nn.Linear(d_value, d_embed*n_head)
+        # multi embedding attention.
+        self.query_fc_layer2 = nn.Linear(d_embed, d_embed)
+        self.key_fc_layer2 = nn.Linear(d_embed, d_embed)
+        self.value_fc_layer2 = nn.Linear(d_embed, d_embed)
+
+        self.activation = nn.ReLU()
+
+    def forward(self, query, key, value, mask=None):
+        n_batch = query.shape[0]
+        query_init = query
+
+        def transform(x, fc_layer):
+            out = fc_layer(x)  # (B, N, H*D)
+            out = out.view(n_batch, -1, self.n_head, self.d_embed)  # (B, N, H, D)
+            out = out.transpose(1, 2)  # (B, H, N, D)
+            
+            return out
+        # Compute cross attention.
+        query = transform(query, self.query_fc_layer)  # (B, H, 1, D)
+        key = transform(key, self.key_fc_layer)  # (B, H, N, D)
+        value = transform(value, self.value_fc_layer)  # (B, H, N, D)
+       
+        out1 = self.calculate_attention(query, key, value)
+        out1 = out1.transpose(1, 2)  # (B, 1, H, D)
+        out1 = self.activation(out1)
+        
+        # Multi-embedding attetion.
+        query2 = self.query_fc_layer2(out1)  # (B, 1, H, D)
+        key2 = self.key_fc_layer2(out1)  # (B, 1, H, D)
+        value2 = self.value_fc_layer2(out1)  # (B, 1, H, D)
+
+        out2 = self.calculate_attention2(query2, key2, value2)  # (B, 1, D)
+        out2 =self.activation(out2)
+
+        query2 = query_init + out2
+        out1 = out1.squeeze(1)
+
+        return out1, out2
+
+    def calculate_attention(self, query, key, value):
+        n_dim_key = key.size(-1)
+        attention_score = torch.matmul(query, key.transpose(-2, -1))  # Q x K.T
+        attention_score = attention_score / math.sqrt(n_dim_key)
+
+        attention_prob = F.softmax(attention_score, dim=-1)  # (B, N_ref, N_src)
+        out = torch.matmul(attention_prob, value)  # (B, N_ref, D)
+
+        return out
+
+    def calculate_attention2(self, query, key, value):
+        n_dim_key = key.size(-1)
+        attention_score = torch.matmul(query.unsqueeze(3), key.unsqueeze(4))
+        attention_score = attention_score.squeeze(4)
+        attention_score = attention_score / math.sqrt(n_dim_key)
+
+        attention_prob = F.softmax(attention_score, dim=-1)  # (B, 1, H)
+        
+        out = torch.mul(attention_prob, value)  # (B, 1, D)
+        out = torch.sum(out, dim=2)
+
+        return out
+
 
 class RadianceTransformer2(nn.Module):
     """
