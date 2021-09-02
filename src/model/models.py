@@ -81,9 +81,9 @@ class PixelNeRFNet(torch.nn.Module):
         self.num_views_per_obj = 1        
         
         # Radiance Transformer
-        d_embed = 128
+        d_embed = 256
         n_head=4
-        d_color=64
+        d_color=256
         iteration=4
         self.transformer_coarse = RadianceTransformer3(
             n_head=n_head,
