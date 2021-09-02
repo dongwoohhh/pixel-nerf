@@ -206,10 +206,10 @@ class NeRFRenderer(torch.nn.Module):
             else:
                 eval_batch_size = self.eval_batch_size
                 eval_batch_dim = 0
-            #print(points.shape)
+
             split_points = torch.split(points, eval_batch_size, dim=eval_batch_dim)
             split_index = torch.split(index_target, eval_batch_size, dim=eval_batch_dim)   
-            #raise NotImplementedError
+
             if use_viewdirs:
                 dim1 = K
                 viewdirs = rays[:, None, 3:6].expand(-1, dim1, -1)  # (B, K, 3)
@@ -220,10 +220,7 @@ class NeRFRenderer(torch.nn.Module):
                 split_viewdirs = torch.split(
                     viewdirs, eval_batch_size, dim=eval_batch_dim
                 )
-                for pnts, dirs, indices in zip(split_points, split_viewdirs, split_index):
-                    #output_ray, rgb_ref = model(pnts, indices, coarse=coarse, viewdirs=dirs)
-                    #val_all.append(output_ray)
-                    
+                for pnts, dirs, indices in zip(split_points, split_viewdirs, split_index):                    
                     rgb_ray, sigma_ray, transformer_key = model(pnts, indices, coarse=coarse, viewdirs=dirs)
                     rgb_ray_all.append(rgb_ray)
                     sigma_ray_all.append(sigma_ray)
@@ -231,20 +228,11 @@ class NeRFRenderer(torch.nn.Module):
                         transformer_key_all.append(transformer_key)
                     else:
                         del transformer_key
-                    """
-                    rgb_ray, sigma_ray, rgb_ref, uv_ref = model(pnts, indices, coarse=coarse, viewdirs=dirs)
-                    rgb_ray_all.append(rgb_ray)
-                    sigma_ray_all.append(sigma_ray)
-                    rgb_ref_all.append(rgb_ref)
-                    uv_ref_all.append(uv_ref)
-                    """
             else:
                 for pnts in split_points:
                     val_all.append(model(pnts, index_target, coarse=coarse))
             if self.training:
                 transformer_keys = torch.cat(transformer_key_all, dim=eval_batch_dim)
-
-            #print(transformer_keys.shape)
             
             # (B*K, 4) OR (SB, B'*K, 4)
             rgbs = torch.cat(rgb_ray_all, dim=eval_batch_dim)
@@ -252,13 +240,6 @@ class NeRFRenderer(torch.nn.Module):
             
             rgbs = rgbs.reshape(B, K, -1)
             sigmas = sigmas.reshape(B, K)
-            """
-            rgb_ref = torch.cat(rgb_ref_all, dim=eval_batch_dim)
-            uv_ref = torch.cat(uv_ref_all, dim=eval_batch_dim)
-            
-            rgb_ref = rgb_ref.reshape(B, K, -1, 3)
-            uv_ref = uv_ref.reshape(B, K, -1, 2)
-            """
 
             if self.training and self.noise_std > 0.0:
                 sigmas = sigmas + torch.randn_like(sigmas) * self.noise_std
@@ -283,13 +264,10 @@ class NeRFRenderer(torch.nn.Module):
             points_ref_all = torch.zeros((sb,B*K//sb, 3), device=rgb_final.device)
             if self.training:
                 with torch.no_grad():
-                    weights_ref = weights.reshape(-1)
-                    mask_ref = torch.where(weights_ref > self.weights_threshold, # 0.01,#
-                                        torch.ones_like(weights_ref, device=rgb_final.device),
-                                        torch.zeros_like(weights_ref, device=rgb_final.device))
-
+                    mask_ref = weights.reshape(-1) > self.weights_threshold
+                mask_ref = mask_ref[:, None]
                 cond_ref = torch.sum(mask_ref)
-                mask_ref = mask_ref.bool()[:, None]
+
                 points_ref = torch.masked_select(points.reshape(-1, 3), mask_ref).reshape(-1, 3)
 
                 viewdirs_ref = torch.masked_select(viewdirs.reshape(-1, 3), mask_ref).reshape(-1, 3)
