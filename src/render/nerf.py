@@ -192,7 +192,7 @@ class NeRFRenderer(torch.nn.Module):
 
             val_all = []
             rgb_ray_all = []
-            sigma_ray_all = []
+            sigma_multi_ray_all = []
             rgb_ref_all = []
             uv_ref_all = []
             transformer_key_all = []
@@ -221,9 +221,9 @@ class NeRFRenderer(torch.nn.Module):
                     viewdirs, eval_batch_size, dim=eval_batch_dim
                 )
                 for pnts, dirs, indices in zip(split_points, split_viewdirs, split_index):                    
-                    rgb_ray, sigma_ray, transformer_key = model(pnts, indices, coarse=coarse, viewdirs=dirs)
+                    rgb_ray, sigma_multi_ray, transformer_key = model(pnts, indices, coarse=coarse, viewdirs=dirs)
                     rgb_ray_all.append(rgb_ray)
-                    sigma_ray_all.append(sigma_ray)
+                    sigma_multi_ray_all.append(sigma_multi_ray)
                     if self.training:
                         transformer_key_all.append(transformer_key)
                     else:
@@ -233,31 +233,47 @@ class NeRFRenderer(torch.nn.Module):
                     val_all.append(model(pnts, index_target, coarse=coarse))
             if self.training:
                 transformer_keys = torch.cat(transformer_key_all, dim=eval_batch_dim)
-            
+            n_iteration = model.n_iteration
+
             # (B*K, 4) OR (SB, B'*K, 4)
             rgbs = torch.cat(rgb_ray_all, dim=eval_batch_dim)
-            sigmas = torch.cat(sigma_ray_all, dim=eval_batch_dim)
-            
+            sigmas_multi = torch.cat(sigma_multi_ray_all, dim=eval_batch_dim)
+
             rgbs = rgbs.reshape(B, K, -1)
-            sigmas = sigmas.reshape(B, K)
+            sigmas_multi = sigmas_multi.reshape(B, K, n_iteration)
+            
+            rgb_final_multi = []
+            depth_final_multi = []
+            for i_sigma in range(n_iteration):
+                sigmas = sigmas_multi[:, :, i_sigma]
+                print(sigmas.shape)
 
-            if self.training and self.noise_std > 0.0:
-                sigmas = sigmas + torch.randn_like(sigmas) * self.noise_std
+                if self.training and self.noise_std > 0.0:
+                    sigmas = sigmas + torch.randn_like(sigmas) * self.noise_std
 
-            alphas = 1 - torch.exp(-deltas * torch.relu(sigmas))  # (B, K)
-            deltas = None
-            sigmas = None
-            alphas_shifted = torch.cat(
-                [torch.ones_like(alphas[:, :1]), 1 - alphas + 1e-10], -1
-            )  # (B, K+1) = [1, a1, a2, ...]
-            T = torch.cumprod(alphas_shifted, -1)  # (B)
-            weights = alphas * T[:, :-1]  # (B, K)
-            alphas = None
-            alphas_shifted = None
+                alphas = 1 - torch.exp(-deltas * torch.relu(sigmas))  # (B, K)
+                deltas = None
+                sigmas = None
+                alphas_shifted = torch.cat(
+                    [torch.ones_like(alphas[:, :1]), 1 - alphas + 1e-10], -1
+                )  # (B, K+1) = [1, a1, a2, ...]
+                T = torch.cumprod(alphas_shifted, -1)  # (B)
+                weights = alphas * T[:, :-1]  # (B, K)
+                alphas = None
+                alphas_shifted = None
 
-            rgb_final = torch.sum(weights.unsqueeze(-1) * rgbs, -2)  # (B, 3)
-            depth_final = torch.sum(weights * z_samp, -1)  # (B)
+                rgb_final = torch.sum(weights.unsqueeze(-1) * rgbs, -2)  # (B, 3)
+                depth_final = torch.sum(weights * z_samp, -1)  # (B)
 
+                rgb_final_multi.append(rgb_final)
+                depth_final_multi.append(depth_final)
+
+            rgb_final_multi = torch.stack(rgb_final_multi)
+            depth_final_multi = torch.stack(depth_final_multi)
+
+            print(rgb_final_multi.shape)
+            print(depth_final_multi.shape)
+            raise NotImplementedError
             NR = model.poses_ref.shape[1]
             rgb_ref_all = torch.zeros((sb,B*K//sb, NR, 3), device=rgb_final.device)
             uv_ref_all = -1 * torch.ones((sb,B*K//sb, NR, 2), device=rgb_final.device)

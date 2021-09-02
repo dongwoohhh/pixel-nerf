@@ -84,21 +84,21 @@ class PixelNeRFNet(torch.nn.Module):
         d_embed = 256
         n_head=4
         d_color=256
-        iteration=4
+        self.n_iteration=4
         self.transformer_coarse = RadianceTransformer3(
             n_head=n_head,
             d_input=self.latent_size+d_in,
             d_embed=d_embed,
             d_view=self.code.d_out,
             d_color=d_color,
-            iteration=iteration,)
+            n_iteration=self.n_iteration,)
         self.transformer_fine = RadianceTransformer3(
             n_head=n_head,
             d_input=self.latent_size+d_in,
             d_embed=d_embed,
             d_view=self.code.d_out,
             d_color=d_color,
-            iteration=iteration,)
+            n_iteration=self.n_iteration,)
 
     def encode(self, images, poses, focal, z_bounds=None, c=None):
         """
@@ -248,14 +248,14 @@ class PixelNeRFNet(torch.nn.Module):
                 transformer_output_rgb, transformer_output_sigma = self.transformer_fine(input=transformer_key, view_dir=transformer_query)
             
             rgb = transformer_output_rgb[:, 0].reshape(SB, B, 3)
-            sigma = transformer_output_sigma.reshape(SB, B, 1)
+            sigma_multi = transformer_output_sigma.reshape(SB, B, self.n_iteration, 1)
             
             rgb = torch.sigmoid(rgb)
-            sigma = torch.relu(sigma)
+            sigma_multi = torch.relu(sigma_multi)
 
             transformer_key = transformer_key.reshape(SB, B, NS, -1)
 
-        return rgb, sigma, transformer_key
+        return rgb, sigma_multi, transformer_key
 
     def forward_ref(self, xyz, viewdirs, index_batch, transformer_key, coarse):
         B = viewdirs.shape[0]
@@ -296,11 +296,6 @@ class PixelNeRFNet(torch.nn.Module):
         # TODO: make backups
         if opt_init and not args.resume:
             return
-        """
-        ckpt_name = (
-            "pixel_nerf_init" if opt_init or not args.resume else "pixel_nerf_latest"
-        )
-        """
         ckpt_name = (
             "pixel_nerf_init" if opt_init or not args.resume else "pixel_nerf_{}".format(args.eval_epoch)
         )

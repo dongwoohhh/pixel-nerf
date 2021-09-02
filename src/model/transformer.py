@@ -16,10 +16,10 @@ class RadianceTransformer3(nn.Module):
         d_embed,
         d_view,
         d_color,
-        iteration,
+        n_iteration,
     ):
         super(RadianceTransformer3, self).__init__()
-        self.iteration = iteration
+        self.n_iteration = n_iteration
         
         self.linear_init = nn.Linear(d_input, d_embed)
 
@@ -41,17 +41,22 @@ class RadianceTransformer3(nn.Module):
         latent_init = byte.mean(dim=1, keepdim=True)
 
         latent = latent_init
-        for i in range(self.iteration):
-            if i < self.iteration - 1:
+        sigma_list = []
+        for i in range(self.n_iteration):
+            if i < self.n_iteration - 1:
                 _, latent = self.cross_attention_backbone(query=latent, key=byte, value=byte)
             else:
                 latent_multihead, latent = self.cross_attention_backbone(query=latent, key=byte, value=byte)
+            # Compute sigma each iteration
+            sigma_i = self.layer_sigma(self.activation(latent))
+            sigma_list.append(sigma_i)
+        
         color = self.cross_attention_color(query=view_dir, key=latent_multihead, value=latent_multihead)
-
-        sigma = self.layer_sigma(self.activation(latent))
         color = self.layer_color(self.activation(color))
 
-        return color, sigma
+        sigma_multi = torch.stack(sigma_list, dim=1)
+
+        return color, sigma_multi
 
 class CrossAttentionLayer(nn.Module):
     def __init__(self, d_query, d_key, d_value, d_embed, n_head):
