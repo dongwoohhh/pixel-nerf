@@ -358,10 +358,16 @@ class PixelNeRFTrainer(trainlib.Trainer):
             rgb_coarse_np = coarse.rgb[0].cpu().numpy().reshape(H, W, 3)
             depth_coarse_np = coarse.depth[0].cpu().numpy().reshape(H, W)
 
+            rgb_coarse_multi_np = coarse.rgb_multi[0].cpu().numpy().reshape(H, W, net.n_iteration, 3)
+            rgb_coarse_multi_np = rgb_coarse_multi_np.transpose(0, 2, 1, 3).reshape(H, W*net.n_iteration, 3)
+
             if using_fine:
                 alpha_fine_np = fine.weights[0].sum(dim=1).cpu().numpy().reshape(H, W)
                 depth_fine_np = fine.depth[0].cpu().numpy().reshape(H, W)
                 rgb_fine_np = fine.rgb[0].cpu().numpy().reshape(H, W, 3)
+
+                rgb_fine_multi_np = fine.rgb_multi[0].cpu().numpy().reshape(H, W, net.n_iteration, 3)
+                rgb_fine_multi_np = rgb_fine_multi_np.transpose(0, 2, 1, 3).reshape(H, W*net.n_iteration, 3)
 
         print("c rgb min {} max {}".format(rgb_coarse_np.min(), rgb_coarse_np.max()))
         print(
@@ -405,6 +411,8 @@ class PixelNeRFTrainer(trainlib.Trainer):
         else:
             rgb_psnr = rgb_coarse_np
 
+        vis2 = np.vstack([np.hstack([rgb_coarse_multi_np, gt]), np.hstack([rgb_fine_multi_np, gt])])
+
         psnr = util.psnr(rgb_psnr, gt)
         vals = {"psnr": psnr}
         print("psnr", psnr)
@@ -414,7 +422,7 @@ class PixelNeRFTrainer(trainlib.Trainer):
 
         # set the renderer network back to train mode
         renderer.train()
-        return vis, vals
+        return vis, vis2, vals
 
 
 trainer = PixelNeRFTrainer()

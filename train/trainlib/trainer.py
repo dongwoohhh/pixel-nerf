@@ -207,7 +207,7 @@ class Trainer:
                         torch.save({"iter": step_id + 1}, self.iter_state_path)
                         self.extra_save_state()
                     #if 0:
-                    if batch % self.vis_interval == 0 and epoch!=0:
+                    if batch % self.vis_interval == 0:# and epoch!=0:
                         print("generating visualization")
                         if self.fixed_test:
                             test_data = next(iter(self.test_data_loader))
@@ -215,7 +215,7 @@ class Trainer:
                             test_data = next(test_data_iter)
                         self.net.eval()
                         with torch.no_grad():
-                            vis, vis_vals = self.vis_step(
+                            vis, vis2, vis_vals = self.vis_step(
                                 test_data, global_step=step_id
                             )
                         if vis_vals is not None:
@@ -227,12 +227,20 @@ class Trainer:
                             import imageio
 
                             vis_u8 = (vis * 255).astype(np.uint8)
+                            vis2_u8 = (vis2 * 255).astype(np.uint8)
                             imageio.imwrite(
                                 os.path.join(
                                     self.visual_path,
                                     "{:04}_{:04}_vis.png".format(epoch, batch),
                                 ),
                                 vis_u8,
+                            )
+                            imageio.imwrite(
+                                os.path.join(
+                                    self.visual_path,
+                                    "{:04}_{:04}_vis2.png".format(epoch, batch),
+                                ),
+                                vis2_u8,
                             )
 
                     if (
