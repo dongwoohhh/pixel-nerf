@@ -220,6 +220,7 @@ class PixelNeRFTrainer(trainlib.Trainer):
             all_index_target.append(index_target)
 
         all_rgb_gt = torch.stack(all_rgb_gt)  # (SB, ray_batch_size, 3)
+        all_rgb_gt_multi = all_rgb_gt.unsqueeze(-2).repeat(1, 1, net.n_iteration, 1)
         all_rays = torch.stack(all_rays)  # (SB, ray_batch_size, 8)
         all_index_target = torch.stack(all_index_target)
 
@@ -241,12 +242,13 @@ class PixelNeRFTrainer(trainlib.Trainer):
         all_bboxes = all_poses = None
 
         render_dict = DotMap(render_par(all_rays, all_index_target, training=True, want_weights=True,))
-      
+
         coarse = render_dict.coarse
         fine = render_dict.fine
+
         using_fine = len(fine) > 0
         loss_dict = {}
-        rgb_loss = self.rgb_coarse_crit(coarse.rgb, all_rgb_gt)
+        rgb_loss = self.rgb_coarse_crit(coarse.rgb_multi, all_rgb_gt_multi)
         loss_dict["rc"] = rgb_loss.item() * self.lambda_coarse
 
         all_images_0to1 = all_images * 0.5 + 0.5
@@ -254,7 +256,7 @@ class PixelNeRFTrainer(trainlib.Trainer):
         loss_dict["rc_ref"] = rgb_ref_loss.item() * self.lambda_coarse  
 
         if using_fine:
-            fine_loss = self.rgb_fine_crit(fine.rgb, all_rgb_gt)
+            fine_loss = self.rgb_fine_crit(fine.rgb_multi, all_rgb_gt_multi)
             rgb_loss = rgb_loss * self.lambda_coarse + fine_loss * self.lambda_fine
             loss_dict["rf"] = fine_loss.item() * self.lambda_fine
 
@@ -271,6 +273,7 @@ class PixelNeRFTrainer(trainlib.Trainer):
             loss.backward()
         loss_dict["t"] = loss.item()
 
+        all_rgb_gt = all_rgb_gt_multi = None
         all_index_target = all_points = all_pcd_mask = all_images = images_0to1 =None
 
         return loss_dict
