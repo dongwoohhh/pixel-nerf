@@ -127,7 +127,6 @@ class RGBRefLoss(torch.nn.Module):
         loss = []
         for i_sb in range(SB):
             mask_ref_i = mask_ref[i_sb]
-            #print(torch.sum(mask_ref_i, dim=1))
             mask_ref_i = torch.gt(torch.sum(mask_ref_i, dim=1), 1)
                 
             rgb_i = rgb_ref[i_sb, mask_ref_i]
@@ -137,20 +136,18 @@ class RGBRefLoss(torch.nn.Module):
             
             xyz_pcd_i = xyz_pcd[i_sb]
             mask_pcd_i = mask_pcd[i_sb]
-            #print('uv', uv_i)
-            #print('points', points_i)
             
             with torch.no_grad():
                 dist_i = torch.cdist(xyz_pcd_i[None], points_i[None])[0]
                 dist_nearest, idx_nearest = torch.topk(dist_i, k=1, dim=0, largest=False)
-                #print('dist_nearest', dist_nearest)
+
                 mask_dist_i = dist_nearest < self.thr_dist
                 mask_dist_i = mask_dist_i[0].reshape(-1, 1, 1)
                 idx_nearest = idx_nearest[0]
 
                 mask_pcd_i = mask_pcd_i[:, idx_nearest].transpose(0, 1)
                 mask_i = mask_pcd_i * mask_dist_i
-            #raise NotImplementedError
+
             loss_i = self.l1_loss(rgb_i, rgb_gt_i)
             if torch.sum(mask_i) > 0:
                 loss_i = torch.sum(loss_i * mask_i) / (3*torch.sum(mask_i))
@@ -162,53 +159,6 @@ class RGBRefLoss(torch.nn.Module):
         loss = 0.1 * loss.mean()
 
         return loss
-
-            
-
-
-
-
-        image_size = (float(W), float(H))
-        print('Need to check this reshape')
-        uv_ref = uv_ref.transpose(1, 2).reshape(SB*NR, B, 2)
-        images = images.reshape(SB*NR, 3, H, W)
-        #weights = weights.reshape(SB, -1)
-        rgb_ref_gt = self.index_images(uv_ref, images, image_size)
-
-        rgb_ref_gt = rgb_ref_gt.reshape(SB, NR, 3, B).permute(0, 3, 1, 2)
-        
-
-
-        """
-        # For visualize.
-        i = random.randint(1, 100)
-        if torch.sum(mask_uv[0, 0]) > 0:
-            print(torch.sum(mask_uv[0, 0]))
-            print(rgb_ref_gt[0, 0, :, :].shape)
-            save_image(images[24], 'image_{}.png'.format(i))
-            tmp = rgb_ref_gt[0, 0, :, :]
-            #tmp = tmp.repeat(30,1)
-            #tmp = tmp[:, None, :].repeat(1, 30, 1).reshape(7*30, 7*30, 3)
-            
-            tmp = tmp[None, :, None, :].repeat(30, 1, 30, 1).reshape(30, -1, 3)
-            print(tmp.shape)
-            tmp = tmp.reshape(30, 30*49 , 3)
-            save_image(tmp.permute(2, 0, 1), 'pick_{}.png'.format(i))
-            print(uv_ref[24, 0, :])
-        """
-
-
-        n_uv = torch.sum(mask_uv, dim=2)
-        loss = self.l1_loss(rgb_ref, rgb_ref_gt)
-
-        if torch.sum(n_uv) > 0:
-            loss = torch.sum(torch.mean(mask_uv.unsqueeze(-1) * loss, dim=3)) / torch.sum(n_uv) #.mean((2,3))
-
-            return loss / 10.
-        else:
-            loss = torch.sum(mask_uv.unsqueeze(-1) * loss)
-
-            return loss / 10.
 
     def index_images(self, uv, images, image_size):
         self.scale[0] = 1 / image_size[0]

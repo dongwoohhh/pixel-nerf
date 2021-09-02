@@ -47,9 +47,6 @@ class PixelNeRFNet(torch.nn.Module):
         # Enable view directions
         self.use_viewdirs = conf.get_bool("use_viewdirs", False)
 
-        # Global image features?
-        self.use_global_encoder = conf.get_bool("use_global_encoder", False)
-
         d_latent = self.encoder.latent_size if self.use_encoder else 0
         d_in = 3 if self.use_xyz else 1
 
@@ -64,20 +61,9 @@ class PixelNeRFNet(torch.nn.Module):
             # Don't apply positional encoding to viewdirs (concat after encoded)
             d_in += 3
 
-        if self.use_global_encoder:
-            # Global image feature
-            self.global_encoder = ImageEncoder.from_conf(conf["global_encoder"])
-            self.global_latent_size = self.global_encoder.latent_size
-            d_latent += self.global_latent_size
-
         d_out = 1
         self.latent_size = self.encoder.latent_size
-        """
-        self.mlp_coarse = make_mlp(conf["mlp_coarse"], d_in, d_latent, d_out=d_out)
-        self.mlp_fine = make_mlp(
-            conf["mlp_fine"], d_in, d_latent, d_out=d_out, allow_empty=True
-        )
-        """
+
         # Note: this is world -> camera, and bottom row is omitted
         self.register_buffer("poses", torch.empty(1, 3, 4), persistent=False)
         self.register_buffer("image_shape", torch.empty(2), persistent=False)
@@ -168,9 +154,6 @@ class PixelNeRFNet(torch.nn.Module):
             c = c.unsqueeze(-1).repeat((1, 2))
         self.c = c
 
-        if self.use_global_encoder:
-            self.global_encoder(images)
-
     def forward(self, xyz, index_target, coarse=True, viewdirs=None, compute_target=True, far=False):
         """
         Predict (r, g, b, sigma) at world space points xyz.
@@ -257,53 +240,8 @@ class PixelNeRFNet(torch.nn.Module):
                 z_feature_src = z_feature.reshape(SB, NS, B, -1)
                 z_feature_src = z_feature_src.transpose(1, 2).reshape(SB*B, NS, -1)
                 transformer_key = torch.cat((latent_src, z_feature_src), dim=-1)
-            """
-                if self.stop_encoder_grad:
-                    latent = latent.detach()
-                latent = latent.transpose(1, 2).reshape(
-                    -1, self.latent_size
-                )  # (SB * NS * B, latent)
 
-                if self.d_in == 0:
-                    # z_feature not needed
-                    mlp_input = latent
-                else:
-                    mlp_input = torch.cat((latent, z_feature), dim=-1)
-
-            if self.use_global_encoder:
-                # Concat global latent code if enabled
-                global_latent = self.global_encoder.latent
-                assert mlp_input.shape[0] % global_latent.shape[0] == 0
-                num_repeats = mlp_input.shape[0] // global_latent.shape[0]
-                global_latent = repeat_interleave(global_latent, num_repeats)
-                mlp_input = torch.cat((global_latent, mlp_input), dim=-1)
-            # Camera frustum culling stuff, currently disabled
-            combine_index = None
-            dim_size = None
-
-            # Run main NeRF network
-            if coarse or self.mlp_fine is None:
-                mlp_output = self.mlp_coarse(
-                    mlp_input,
-                    combine_inner_dims=(self.num_views_per_obj, B),
-                    combine_index=combine_index,
-                    dim_size=dim_size,
-                )
-            else:
-                mlp_output = self.mlp_fine(
-                    mlp_input,
-                    combine_inner_dims=(self.num_views_per_obj, B),
-                    combine_index=combine_index,
-                    dim_size=dim_size,
-                )
-
-            # Interpret the output
-            mlp_output = mlp_output.reshape(-1, B, self.d_out)
-
-            sigma = mlp_output
-            """
             # Run Radiance Transformer network.
-            #self.transformer_key = transformer_key
             if coarse:
                 transformer_output_rgb, transformer_output_sigma = self.transformer_coarse(input=transformer_key, view_dir=transformer_query)
             else:
