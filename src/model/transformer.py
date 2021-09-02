@@ -155,16 +155,20 @@ class RadianceTransformer2(nn.Module):
         self.layer_color = nn.Linear(n_dim, 3)
         self.layer_sigma = nn.Linear(n_dim, 1)
 
+        self.activation = nn.ReLU()
+
     def forward(self, query, latent):
         out = self.linear1(latent)
+        out = self.activation(out)
+
         for layer in self.layers:
             out = layer(out)
 
         sigma = torch.max(out, dim = 1)[0]
-        sigma = self.layer_sigma(sigma)
+        sigma = self.layer_sigma(self.activation(sigma))
         out = self.attn_from_ref_to_src(query=query, key=out, value=out)
 
-        color = self.layer_color(out)
+        color = self.layer_color(self.activation(out))
 
         return color, sigma
 
