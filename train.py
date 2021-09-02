@@ -406,6 +406,9 @@ class PixelNeRFTrainer(trainlib.Trainer):
         vals = {"psnr": psnr}
         print("psnr", psnr)
 
+        cam_rays = images = index_dest = poses = render_dict = None
+        test_rays = test_poses = None
+
         # set the renderer network back to train mode
         renderer.train()
         return vis, vals
