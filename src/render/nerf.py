@@ -301,7 +301,7 @@ class NeRFRenderer(torch.nn.Module):
                 points_ref_all = None
             points = None
             viewdirs = None
-            index_target = None
+
             if self.white_bkgd:
                 # White background
                 pix_alpha = weights.sum(dim=1)  # (B), pixel alpha

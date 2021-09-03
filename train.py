@@ -273,8 +273,7 @@ class PixelNeRFTrainer(trainlib.Trainer):
             loss.backward()
         loss_dict["t"] = loss.item()
 
-        all_rgb_gt = all_rgb_gt_multi = all_rays = render_dict = None
-        all_index_target = all_points = all_pcd_mask = all_images = images_0to1 =None
+        all_index_target = all_points = all_pcd_mask = all_images = None
 
         return loss_dict
 
@@ -417,10 +416,11 @@ class PixelNeRFTrainer(trainlib.Trainer):
         vals = {"psnr": psnr}
         print("psnr", psnr)
 
-        cam_rays = images = index_dest = poses = render_dict = coarse = fine = None
-        test_rays = test_poses = test_images = None
+        #cam_rays = images = index_dest = poses = render_dict = coarse = fine = None
+        #test_rays = test_poses = test_images = None
 
         # set the renderer network back to train mode
+        torch.cuda.empty_cache()
         renderer.train()
         return vis, vis2, vals
 
