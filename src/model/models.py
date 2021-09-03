@@ -337,7 +337,7 @@ class PixelNeRFNet(torch.nn.Module):
         if osp.exists(ckpt_path):
             copyfile(ckpt_path, ckpt_backup_path)
         torch.save(self.state_dict(), ckpt_path)
-        #torch.save(self.state_dict(), latest_path)
+        torch.save(self.state_dict(), latest_path)
         return self
 
     
