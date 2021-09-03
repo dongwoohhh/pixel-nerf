@@ -297,7 +297,7 @@ class PixelNeRFNet(torch.nn.Module):
         if opt_init and not args.resume:
             return
         ckpt_name = (
-            "pixel_nerf_init" if opt_init or not args.resume else "pixel_nerf_{}".format(args.eval_epoch)
+            "pixel_nerf_init" if opt_init or not args.resume else "pixel_nerf_latest"
         )
         model_path = "%s/%s/%s" % (args.checkpoints_path, args.name, ckpt_name)
 
@@ -332,11 +332,12 @@ class PixelNeRFNet(torch.nn.Module):
 
         ckpt_path = osp.join(args.checkpoints_path, args.name, ckpt_name)
         ckpt_backup_path = osp.join(args.checkpoints_path, args.name, backup_name)
+        latest_path = osp.join(args.checkpoints_path, args.name, latest_name)
 
         if osp.exists(ckpt_path):
             copyfile(ckpt_path, ckpt_backup_path)
         torch.save(self.state_dict(), ckpt_path)
-        torch.save(self.state_dict(), latest_name)
+        #torch.save(self.state_dict(), latest_path)
         return self
 
     

@@ -268,10 +268,11 @@ class NeRFRenderer(torch.nn.Module):
             rgb_final_multi = torch.stack(rgb_final_multi, dim=1)
 
             NR = model.poses_ref.shape[1]
-            rgb_ref_all = torch.zeros((sb,B*K//sb, NR, 3), device=rgb_final.device)
-            uv_ref_all = -1 * torch.ones((sb,B*K//sb, NR, 2), device=rgb_final.device)
-            points_ref_all = torch.zeros((sb,B*K//sb, 3), device=rgb_final.device)
+            
             if self.training:
+                rgb_ref_all = torch.zeros((sb,B*K//sb, NR, 3), device=rgb_final.device)
+                uv_ref_all = -1 * torch.ones((sb,B*K//sb, NR, 2), device=rgb_final.device)
+                points_ref_all = torch.zeros((sb,B*K//sb, 3), device=rgb_final.device)
                 with torch.no_grad():
                     mask_ref = weights.reshape(-1) > self.weights_threshold
                 mask_ref = mask_ref[:, None]
@@ -294,6 +295,10 @@ class NeRFRenderer(torch.nn.Module):
                         rgb_ref_all[i, :n_batch_i] = torch.masked_select(rgb_ref.reshape(-1, NR*3), mask_i.unsqueeze(-1)).reshape(n_batch_i, NR, 3)
                         uv_ref_all[i, :n_batch_i] = torch.masked_select(uv_ref.reshape(-1, NR*2), mask_i.unsqueeze(-1)).reshape(n_batch_i, NR, 2)
                         points_ref_all[i, :n_batch_i] = torch.masked_select(points_ref, mask_i.unsqueeze(-1)).reshape(n_batch_i, 3)
+            else:
+                rgb_ref_all = None
+                uv_ref_all = None
+                points_ref_all = None
             points = None
             viewdirs = None
             index_target = None
@@ -377,9 +382,9 @@ class NeRFRenderer(torch.nn.Module):
             rgb = rgb_multi[:, :, -1, :]
             depth = depth.reshape(superbatch_size, -1)
             weights = weights.reshape(superbatch_size, -1, weights.shape[-1])
-            rgb_ref = rgb_ref.reshape(superbatch_size, -1, rgb_ref.shape[-2] , 3)
-            uv_ref = uv_ref.reshape(superbatch_size, -1, rgb_ref.shape[-2], 2)
-            points_ref = points_ref.reshape(superbatch_size, -1, 3)
+            #rgb_ref = rgb_ref.reshape(superbatch_size, -1, rgb_ref.shape[-2] , 3)
+            #uv_ref = uv_ref.reshape(superbatch_size, -1, rgb_ref.shape[-2], 2)
+            #points_ref = points_ref.reshape(superbatch_size, -1, 3)
 
         ret_dict = DotMap(rgb=rgb, rgb_multi=rgb_multi, depth=depth, rgb_ref=rgb_ref, uv_ref=uv_ref, points_ref=points_ref)
         if want_weights:
