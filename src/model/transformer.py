@@ -41,10 +41,9 @@ class RadianceTransformer3(nn.Module):
     def forward(self, input, view_dir):
         byte = self.linear_init(input)
         byte = self.activation(byte)
-        #latent_init = byte.mean(dim=1, keepdim=True)
+        latent_init = byte.mean(dim=1, keepdim=True)
 
-        latent_init = self.latent_init.repeat(byte.shape[0], 1, 1)
-        #out = torch.cat([cls_token, out], dim=1)
+        #latent_init = self.latent_init.repeat(byte.shape[0], 1, 1)
 
         latent = latent_init
         sigma_list = []
@@ -107,7 +106,7 @@ class CrossAttentionLayer(nn.Module):
         out2 = self.calculate_attention2(query2, key2, value2)  # (B, 1, D)
         out2 =self.activation(out2)
 
-        query2 = query_init + out2
+        out2 += query_init
         out1 = out1.squeeze(1)
 
         return out1, out2
