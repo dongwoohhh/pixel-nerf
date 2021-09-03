@@ -20,7 +20,10 @@ class RadianceTransformer3(nn.Module):
     ):
         super(RadianceTransformer3, self).__init__()
         self.n_iteration = n_iteration
-        
+
+        self.latent_init = nn.Parameter(torch.zeros(1, 1, d_embed))
+        nn.init.normal_(self.latent_init, std=0.02)
+
         self.linear_init = nn.Linear(d_input, d_embed)
 
         self.cross_attention_backbone = CrossAttentionLayer(
@@ -38,7 +41,10 @@ class RadianceTransformer3(nn.Module):
     def forward(self, input, view_dir):
         byte = self.linear_init(input)
         byte = self.activation(byte)
-        latent_init = byte.mean(dim=1, keepdim=True)
+        #latent_init = byte.mean(dim=1, keepdim=True)
+
+        latent_init = self.latent_init.repeat(byte.shape[0], 1, 1)
+        #out = torch.cat([cls_token, out], dim=1)
 
         latent = latent_init
         sigma_list = []

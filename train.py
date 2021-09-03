@@ -248,7 +248,7 @@ class PixelNeRFTrainer(trainlib.Trainer):
 
         using_fine = len(fine) > 0
         loss_dict = {}
-        rgb_loss = self.rgb_coarse_crit(coarse.rgb_multi, all_rgb_gt_multi)
+        rgb_loss = self.rgb_coarse_crit(coarse.rgb, all_rgb_gt)
         loss_dict["rc"] = rgb_loss.item() * self.lambda_coarse
 
         all_images_0to1 = all_images * 0.5 + 0.5
@@ -256,7 +256,7 @@ class PixelNeRFTrainer(trainlib.Trainer):
         loss_dict["rc_ref"] = rgb_ref_loss.item() * self.lambda_coarse  
 
         if using_fine:
-            fine_loss = self.rgb_fine_crit(fine.rgb_multi, all_rgb_gt_multi)
+            fine_loss = self.rgb_fine_crit(fine.rgb, all_rgb_gt)
             rgb_loss = rgb_loss * self.lambda_coarse + fine_loss * self.lambda_fine
             loss_dict["rf"] = fine_loss.item() * self.lambda_fine
 
