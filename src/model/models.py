@@ -79,26 +79,18 @@ class PixelNeRFNet(torch.nn.Module):
         self.register_buffer("poses_ref", torch.empty(1, 3, 4), persistent=False)
         self.num_objs = 0
         self.num_views_per_obj = 1        
-        
+
         # Radiance Transformer
-        d_embed = 256
-        n_head=4
-        d_color=256
-        self.n_iteration=4
-        self.transformer_coarse = RadianceTransformer3(
-            n_head=n_head,
+        self.n_iteration=conf["perceiver"]["n_iteration"]
+        self.transformer_coarse = RadianceTransformer3.from_conf(
+            conf["perceiver"],
             d_input=self.latent_size+d_in,
-            d_embed=d_embed,
-            d_view=self.code.d_out,
-            d_color=d_color,
-            n_iteration=self.n_iteration,)
-        self.transformer_fine = RadianceTransformer3(
-            n_head=n_head,
+            d_view=self.code.d_out,)
+        self.transformer_fine = RadianceTransformer3.from_conf(
+            conf["perceiver"],
             d_input=self.latent_size+d_in,
-            d_embed=d_embed,
-            d_view=self.code.d_out,
-            d_color=d_color,
-            n_iteration=self.n_iteration,)
+            d_view=self.code.d_out,)
+
 
     def encode(self, images, poses, focal, z_bounds=None, c=None):
         """
