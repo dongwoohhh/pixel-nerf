@@ -3,7 +3,6 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 import numpy as np
-from torch.nn.modules.activation import MultiheadAttention
 import util
 
 class RadianceTransformer3(nn.Module):
@@ -50,8 +49,12 @@ class RadianceTransformer3(nn.Module):
             n_query=d_view, n_key=d_latent, n_value=d_latent, n_dim=d_color, n_head=n_head
         )
 
-        self.layer_color = nn.Linear(d_color, 3)
-        self.layer_sigma = nn.Linear(d_latent, 1)
+        d_mid = 64
+        self.layer_color0 = nn.Linear(d_color, d_mid)
+        self.layer_color = nn.Linear(d_mid, 3)
+
+        self.layer_sigma0 = nn.Linear(d_latent, d_mid)
+        self.layer_sigma = nn.Linear(d_mid, 1)
 
         self.activation = nn.ReLU()        
         
@@ -77,10 +80,13 @@ class RadianceTransformer3(nn.Module):
 
             # Compute sigma each iteration
             sigma_i = torch.max(latent, dim=1, keepdim=True)[0]
+            sigma_i = self.layer_sigma0(self.activation(sigma_i))
             sigma_i = self.layer_sigma(self.activation(sigma_i))
             sigma_list.append(sigma_i)
 
         color = self.cross_attention_color(query=view_dir, key=latent, value=latent)
+
+        color = self.layer_color0(self.activation(color))
         color = self.layer_color(self.activation(color))
 
         sigma_multi = torch.stack(sigma_list, dim=1)
