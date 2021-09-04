@@ -268,8 +268,8 @@ class NeRFRenderer(torch.nn.Module):
             rgb_final_multi = torch.stack(rgb_final_multi, dim=1)
 
             NR = model.poses_ref.shape[1]
-            
-            if self.training:
+            """
+            if 0:#self.training:
                 rgb_ref_all = torch.zeros((sb,B*K//sb, NR, 3), device=rgb_final.device)
                 uv_ref_all = -1 * torch.ones((sb,B*K//sb, NR, 2), device=rgb_final.device)
                 points_ref_all = torch.zeros((sb,B*K//sb, 3), device=rgb_final.device)
@@ -299,6 +299,10 @@ class NeRFRenderer(torch.nn.Module):
                 rgb_ref_all = None
                 uv_ref_all = None
                 points_ref_all = None
+            """
+            rgb_ref_all = None
+            uv_ref_all = None
+            points_ref_all = None
             points = None
             viewdirs = None
 
