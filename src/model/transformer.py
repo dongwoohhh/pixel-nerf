@@ -12,6 +12,7 @@ class RadianceTransformer3(nn.Module):
     def __init__(
         self,
         d_input,
+        d_code,
         d_view,
         d_latent,
         d_color,
@@ -23,80 +24,108 @@ class RadianceTransformer3(nn.Module):
         super(RadianceTransformer3, self).__init__()
         self.n_layer = n_layer
         self.n_iteration = n_iteration
+        self.d_code = d_code
 
-        self.latent_init = nn.Parameter(torch.zeros(1, n_latent, d_latent))
+        # Learnable parameters for latent array.
+        self.latent_init = nn.Parameter(torch.zeros(1, 1, d_latent))
         nn.init.normal_(self.latent_init, std=0.02)
 
-        self.linear_init = nn.Linear(d_input, d_latent)
+        # Linear view_direction and input to latent dimension..
+        self.linear_code = nn.Linear(d_code, d_latent)
+        self.linear_input = nn.Linear(d_input, d_latent)
 
-        #self.cross_attention_input = CrossAttentionLayer(
-        #    d_query=d_latent, d_key=d_latent, d_value=d_latent, d_latent=d_latent, n_head=n_head)
-        self.cross_attention_input_init = MultiHeadAttentionLayer(
-            n_query=d_latent, n_key=d_latent, n_value=d_latent, n_dim=d_latent, n_head=1
+        # Cross-atention from latent to input.
+        self.cross_attn_encoder = MultiHeadAttentionLayer(
+            d_query=d_latent, d_key=d_latent, d_value=d_latent, n_dim=d_latent, n_head=n_latent,
+            aggregate=None
         )
-        self.cross_attention_input = MultiHeadAttentionLayer(
-            n_query=d_latent, n_key=d_latent, n_value=d_latent, n_dim=d_latent, n_head=1
-        )
-        
-        self.transformer_latent = []
+        # Latent transformer.
+        self.latent_transformer = []
         for i in range(n_layer):
-            self.transformer_latent.append(
+            self.latent_transformer.append(
                 TransformerEncoderLayer(n_dim=d_latent, n_head=n_head)
             )
-        self.transformer_latent = nn.ModuleList(self.transformer_latent)
-
-        self.cross_attention_color = MultiHeadAttentionLayer(
-            n_query=d_view, n_key=d_latent, n_value=d_latent, n_dim=d_color, n_head=n_head
+        self.latent_transformer = nn.ModuleList(self.latent_transformer)
+        # Decoding latent to input space.
+        self.cross_attn_decoder = MultiHeadAttentionLayer(
+            d_query=d_latent, d_key=d_latent, d_value=d_latent, n_dim=d_latent, n_head=1,
+            aggregate=None
         )
-
-        d_mid = 64
-        self.layer_color0 = nn.Linear(d_color, d_mid)
-        self.layer_color = nn.Linear(d_mid, 3)
-
-        self.layer_sigma0 = nn.Linear(d_latent, d_mid)
-        self.layer_sigma = nn.Linear(d_mid, 1)
+        # Update latent.
+        self.linear_latent = nn.Linear(n_latent*d_latent, d_latent)
+        # Color decoder.
+        self.linear_color_query = nn.Linear(d_view, d_color//2)
+        self.decoder_color = MultiHeadAttentionLayer(
+            d_query=d_color//2, d_key=d_latent, d_value=d_latent, n_dim=d_color, n_head=1,
+        )
+        self.layer_color1 = nn.Linear(d_color, d_color//2)
+        self.layer_color2 = nn.Linear(d_color//2, 3)
+        # Sigma decoder.
+        self.layer_sigma1 = nn.Linear(d_latent, d_latent//2)
+        self.layer_sigma2 = nn.Linear(d_latent//2, 1)
 
         self.activation = nn.ReLU()        
         
     def forward(self, input, view_dir):
-        byte = self.linear_init(input)
+        torch.autograd.set_detect_anomaly(True)
+        n_batch = input.shape[0]
+        # Split input and code.
+        code = input[:, :, -self.d_code:]
+        byte = input[:, :, :-self.d_code]
+        # Input and code dimension to input dimension.
+        byte = self.linear_input(byte)
+        byte += self.linear_code(code)
         byte = self.activation(byte)
-        #latent_init = byte.mean(dim=1, keepdim=True)
+        # Latent init.
+        latent_init = self.latent_init.repeat(n_batch, 1, 1)
+        latent = latent_init
 
-        latent = self.latent_init.repeat(byte.shape[0], 1, 1)
-
-        sigma_list = []
+        sigma_multi = []
+        # Iterative attend input.
         for i in range(self.n_iteration):
-            # Cross attention
-            latent_identity = latent
-            if i==0:
-                latent = self.cross_attention_input_init(query=latent, key=byte, value=byte)
-            else:
-                latent = self.cross_attention_input(query=latent, key=byte, value=byte)
-            latent += latent_identity
-            # Transformer
-            for layer in self.transformer_latent:
+            # Cross-attention encoder.
+            latent_init_identity = latent_init
+            
+            latent = self.cross_attn_encoder(query=latent_init, key=byte, value=byte)
+            latent = latent.squeeze(1)
+            # Transformer.
+            for layer in self.latent_transformer:
                 latent = layer(latent)
+            # Cross_attention decoder.
+            byte_identity = byte
+            
+            byte_update = self.cross_attn_decoder(query=byte, key=latent, value=latent)
+            byte_update = byte_update.squeeze(2)
+            
+            # Update byte.
+            byte = byte_identity + byte_update
+            byte = self.activation(byte)
+            
+            # Update latent.
+            latent_update = self.linear_latent(latent.reshape(n_batch, 1, -1))
+            latent_init = latent_init_identity + latent_update
+            latent_init = self.activation(latent_init)
 
-            # Compute sigma each iteration
-            sigma_i = torch.max(latent, dim=1, keepdim=True)[0]
-            sigma_i = self.layer_sigma0(self.activation(sigma_i))
-            sigma_i = self.layer_sigma(self.activation(sigma_i))
-            sigma_list.append(sigma_i)
+            # Decode sigma.
+            sigma_i = torch.max(byte, dim=1, keepdim=True)[0]
+            sigma_i = self.layer_sigma1(sigma_i)
+            sigma_i = self.layer_sigma2(self.activation(sigma_i))
+            sigma_multi.append(sigma_i)
+        
+        sigma_multi = torch.stack(sigma_multi, dim=1)
 
-        color = self.cross_attention_color(query=view_dir, key=latent, value=latent)
-
-        color = self.layer_color0(self.activation(color))
-        color = self.layer_color(self.activation(color))
-
-        sigma_multi = torch.stack(sigma_list, dim=1)
-
-        return color, sigma_multi
+        # Decode color.
+        view_dir = self.linear_color_query(view_dir)
+        color = self.decoder_color(query=view_dir, key=byte, value=byte)
+        color = self.layer_color1(color)
+        color = self.layer_color2(self.activation(color))
     
+        return color, sigma_multi
     @classmethod
-    def from_conf(cls, conf, d_input, d_view):
+    def from_conf(cls, conf, d_input, d_code, d_view):
         return cls(
             d_input,
+            d_code,
             d_view,
             d_latent=conf.get_int("d_latent", 128),
             d_color=conf.get_int("d_color", 64),
@@ -281,25 +310,21 @@ class TransformerEncoderLayer(nn.Module):
         return out
 
 class MultiHeadAttentionLayer(nn.Module):
-    def __init__(self, n_query, n_key, n_value, n_dim, n_head):
+    def __init__(self, d_query, d_key, d_value, n_dim, n_head, aggregate="linear"):
         super(MultiHeadAttentionLayer, self).__init__()
         self.n_dim = n_dim
         self.n_head = n_head
+        self.aggregate = aggregate
 
-        self.query_fc_layer = [] #nn.Linear(2, n_dim)
-        self.key_fc_layer = [] #nn.Linear(n_dim, n_dim)
-        self.value_fc_layer = [] #nn.Linear(n_dim, n_dim)
-        
-        
-        self.query_fc_layer = nn.Linear(n_query, n_dim*n_head)
-        self.key_fc_layer = nn.Linear(n_key, n_dim*n_head)
-        self.value_fc_layer = nn.Linear(n_value, n_dim*n_head)
-        
-        self.fc_layer = nn.Linear(n_dim*n_head, n_dim)
+        self.query_fc_layer = nn.Linear(d_query, n_dim*n_head)
+        self.key_fc_layer = nn.Linear(d_key, n_dim*n_head)
+        self.value_fc_layer = nn.Linear(d_value, n_dim*n_head)
+        if aggregate == "linear":
+            self.fc_layer = nn.Linear(n_dim*n_head, n_dim)
 
     def forward(self, query, key, value):
         
-        # query's shape: (B, N_ref, 2)
+        # query's shape: (B, N_query, 2)
         # key, value's shape: (B, N_src, d_k)
         n_batch = query.shape[0]
 
@@ -309,16 +334,17 @@ class MultiHeadAttentionLayer(nn.Module):
             out = out.transpose(1, 2)  # (B, H, N, D)
             
             return out
-        
+
         query = transform(query, self.query_fc_layer)
         key = transform(key, self.key_fc_layer)
         value = transform(value, self.value_fc_layer)
 
         out = self.calculate_attention(query, key, value)
-        out = out.transpose(1,2)  # (B, N_ref, H, D)
-        out = out.contiguous().view(n_batch, -1, self.n_head*self.n_dim)
-
-        out = self.fc_layer(out)  # (B, N_ref, D)
+        out = out.transpose(1, 2)  # (B, N_query, H, D)
+        
+        if self.aggregate == "linear":
+            out = out.contiguous().view(n_batch, -1, self.n_head*self.n_dim)
+            out = self.fc_layer(out)  # (B, N_query, D)
 
         return out
 

@@ -84,12 +84,14 @@ class PixelNeRFNet(torch.nn.Module):
         self.n_iteration=conf["perceiver"]["n_iteration"]
         self.transformer_coarse = RadianceTransformer3.from_conf(
             conf["perceiver"],
-            d_input=self.latent_size+d_in,
-            d_view=self.code.d_out,)
+            d_input=self.latent_size,
+            d_code=d_in,
+            d_view=3,)
         self.transformer_fine = RadianceTransformer3.from_conf(
             conf["perceiver"],
-            d_input=self.latent_size+d_in,
-            d_view=self.code.d_out,)
+            d_input=self.latent_size,
+            d_code=d_in,
+            d_view=3,)
 
 
     def encode(self, images, poses, focal, z_bounds=None, c=None):
@@ -169,8 +171,8 @@ class PixelNeRFNet(torch.nn.Module):
                     poses_tgt[:, :, :3, :3], viewdirs_tgt
                 )
                 viewdirs_tgt = viewdirs_tgt.reshape(-1, 3)
-                transformer_query = self.code(viewdirs_tgt)
-                transformer_query = transformer_query.reshape(SB*B, 1, -1)
+                #transformer_query = self.code(viewdirs_tgt)
+                viewdirs_tgt = viewdirs_tgt.reshape(SB*B, 1, -1)
 
             xyz = repeat_interleave(xyz, NS)  # (SB*NS, B, 3)
             xyz_rot = torch.matmul(self.poses[:, None, :3, :3], xyz.unsqueeze(-1))[
@@ -231,13 +233,13 @@ class PixelNeRFNet(torch.nn.Module):
                 latent_src = latent_src.transpose(1, 2).reshape(SB*B, NS, self.latent_size)
                 z_feature_src = z_feature.reshape(SB, NS, B, -1)
                 z_feature_src = z_feature_src.transpose(1, 2).reshape(SB*B, NS, -1)
-                transformer_key = torch.cat((latent_src, z_feature_src), dim=-1)
+                transformer_input = torch.cat((latent_src, z_feature_src), dim=-1)
 
             # Run Radiance Transformer network.
             if coarse:
-                transformer_output_rgb, transformer_output_sigma = self.transformer_coarse(input=transformer_key, view_dir=transformer_query)
+                transformer_output_rgb, transformer_output_sigma = self.transformer_coarse(input=transformer_input, view_dir=viewdirs_tgt)
             else:
-                transformer_output_rgb, transformer_output_sigma = self.transformer_fine(input=transformer_key, view_dir=transformer_query)
+                transformer_output_rgb, transformer_output_sigma = self.transformer_fine(input=transformer_input, view_dir=viewdirs_tgt)
             
             rgb = transformer_output_rgb[:, 0].reshape(SB, B, 3)
             sigma_multi = transformer_output_sigma.reshape(SB, B, self.n_iteration, 1)
@@ -245,9 +247,9 @@ class PixelNeRFNet(torch.nn.Module):
             rgb = torch.sigmoid(rgb)
             sigma_multi = torch.relu(sigma_multi)
 
-            transformer_key = transformer_key.reshape(SB, B, NS, -1)
+            transformer_input = transformer_input.reshape(SB, B, NS, -1)
 
-        return rgb, sigma_multi, transformer_key
+        return rgb, sigma_multi, transformer_input
 
     def forward_ref(self, xyz, viewdirs, index_batch, transformer_key, coarse):
         B = viewdirs.shape[0]
