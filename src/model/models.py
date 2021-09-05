@@ -268,8 +268,8 @@ class PixelNeRFNet(torch.nn.Module):
         viewdirs_ref = viewdirs[:, None, :, None].repeat(1, NR, 1, 1)
         viewdirs_ref = torch.matmul(poses_ref[:, :, :3, :3], viewdirs_ref)[..., 0]
 
-        transformer_query = self.code(viewdirs_ref.reshape(-1, 3))
-        transformer_query = transformer_query.reshape(B, NR, -1)
+        #transformer_query = self.code(viewdirs_ref.reshape(-1, 3))
+        transformer_query = viewdirs_ref.reshape(B, NR, -1)
 
         if coarse:
             transformer_output_rgb, _ = self.transformer_coarse(input=transformer_key, view_dir=transformer_query)
