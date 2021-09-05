@@ -67,7 +67,6 @@ class RadianceTransformer3(nn.Module):
         self.activation = nn.ReLU()        
         
     def forward(self, input, view_dir):
-        torch.autograd.set_detect_anomaly(True)
         n_batch = input.shape[0]
         # Split input and code.
         code = input[:, :, -self.d_code:]
