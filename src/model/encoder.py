@@ -26,6 +26,7 @@ class SpatialEncoder(nn.Module):
         feature_scale=1.0,
         use_first_pool=True,
         norm_type="batch",
+        color_concat=False
     ):
         """
         :param backbone Backbone network. Either custom, in which case
@@ -50,6 +51,7 @@ class SpatialEncoder(nn.Module):
         self.use_custom_resnet = backbone == "custom"
         self.feature_scale = feature_scale
         self.use_first_pool = use_first_pool
+        self.color_concat=color_concat
         norm_layer = util.get_norm_layer(norm_type)
 
         if self.use_custom_resnet:
@@ -66,6 +68,9 @@ class SpatialEncoder(nn.Module):
             self.model.fc = nn.Sequential()
             self.model.avgpool = nn.Sequential()
             self.latent_size = [0, 64, 128, 256, 512, 1024][num_layers]
+
+        if self.color_concat:
+            self.latent_size += 3
 
         self.num_layers = num_layers
         self.index_interp = index_interp
@@ -128,6 +133,7 @@ class SpatialEncoder(nn.Module):
         if self.use_custom_resnet:
             self.latent = self.model(x)
         else:
+            x_init = x
             x = self.model.conv1(x)
             x = self.model.bn1(x)
             x = self.model.relu(x)
@@ -159,6 +165,16 @@ class SpatialEncoder(nn.Module):
                     align_corners=align_corners,
                 )
             self.latent = torch.cat(latents, dim=1)
+
+        if self.color_concat:
+            color = F.interpolate(
+                x_init,
+                latent_sz,
+                mode=self.upsample_interp,
+                align_corners=align_corners,
+            )
+            self.latent = torch.cat([self.latent, color], dim=1)
+
         self.latent_scaling[0] = self.latent.shape[-1]
         self.latent_scaling[1] = self.latent.shape[-2]
         self.latent_scaling = self.latent_scaling / (self.latent_scaling - 1) * 2.0
@@ -175,6 +191,7 @@ class SpatialEncoder(nn.Module):
             upsample_interp=conf.get_string("upsample_interp", "bilinear"),
             feature_scale=conf.get_float("feature_scale", 1.0),
             use_first_pool=conf.get_bool("use_first_pool", True),
+            color_concat=conf.get_bool("color_concat", False)
         )
 
 
