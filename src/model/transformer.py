@@ -35,22 +35,33 @@ class RadianceTransformer3(nn.Module):
         self.linear_input = nn.Linear(d_input, d_latent)
 
         # Cross-atention from latent to input.
-        self.cross_attn_encoder = MultiHeadAttentionLayer(
-            d_query=d_latent, d_key=d_latent, d_value=d_latent, n_dim=d_latent, n_head=n_latent,
-            aggregate=None
-        )
+        self.cross_attn_encoder = []
+        for i in range(n_iteration):
+            self.cross_attn_encoder.append(MultiHeadAttentionLayer(
+                d_query=d_latent, d_key=d_latent, d_value=d_latent, n_dim=d_latent, n_head=n_latent,
+                aggregate=None
+            ))
+        self.cross_attn_encoder = nn.ModuleList(self.cross_attn_encoder)
         # Latent transformer.
         self.latent_transformer = []
-        for i in range(n_layer):
-            self.latent_transformer.append(
-                TransformerEncoderLayer(n_dim=d_latent, n_head=n_head)
-            )
+        for i_iter in range(n_iteration):    
+            latent_transformer_i = []
+            for i_layer in range(n_layer):
+                latent_transformer_i.append(
+                    TransformerEncoderLayer(n_dim=d_latent, n_head=n_head)
+                )
+            latent_transformer_i = nn.ModuleList(latent_transformer_i)
+            self.latent_transformer.append(latent_transformer_i)
         self.latent_transformer = nn.ModuleList(self.latent_transformer)
+
         # Decoding latent to input space.
-        self.cross_attn_decoder = MultiHeadAttentionLayer(
-            d_query=d_latent, d_key=d_latent, d_value=d_latent, n_dim=d_latent, n_head=1,
-            aggregate=None
-        )
+        self.cross_attn_decoder = []
+        for i in range(n_iteration):
+            self.cross_attn_decoder.append(MultiHeadAttentionLayer(
+                d_query=d_latent, d_key=d_latent, d_value=d_latent, n_dim=d_latent, n_head=1,
+                aggregate=None
+            ))
+        self.cross_attn_decoder = nn.ModuleList(self.cross_attn_decoder)
         # Update latent.
         self.linear_latent = nn.Linear(n_latent*d_latent, d_latent)
         # Color decoder.
@@ -71,33 +82,31 @@ class RadianceTransformer3(nn.Module):
         # Split input and code.
         code = input[:, :, -self.d_code:]
         byte = input[:, :, :-self.d_code]
+
         # Input and code dimension to input dimension.
         byte = self.linear_input(byte)
         byte += self.linear_code(code)
         byte = self.activation(byte)
         # Latent init.
         latent_init = self.latent_init.repeat(n_batch, 1, 1)
-        latent = latent_init
 
         sigma_multi = []
         # Iterative attend input.
-        for i in range(self.n_iteration):
+        for i, cross_attn_encoder in enumerate(self.cross_attn_encoder):
             # Cross-attention encoder.
             latent_init_identity = latent_init
             
-            latent = self.cross_attn_encoder(query=latent_init, key=byte, value=byte)
+            latent = cross_attn_encoder(query=latent_init, key=byte, value=byte)
             latent = latent.squeeze(1)
             # Transformer.
-            for layer in self.latent_transformer:
+            for layer in self.latent_transformer[i]:
                 latent = layer(latent)
             # Cross_attention decoder.
-            byte_identity = byte
-            
-            byte_update = self.cross_attn_decoder(query=byte, key=latent, value=latent)
-            byte_update = byte_update.squeeze(2)
+            byte = self.cross_attn_decoder[i](query=byte, key=latent, value=latent)
+            byte = byte.squeeze(2)
             
             # Update byte.
-            byte = byte_identity + byte_update
+            #byte = byte_identity + byte_update
             byte = self.activation(byte)
             
             # Update latent.
@@ -105,13 +114,10 @@ class RadianceTransformer3(nn.Module):
             latent_init = latent_init_identity + latent_update
             latent_init = self.activation(latent_init)
 
-            # Decode sigma.
-            sigma_i = torch.max(byte, dim=1, keepdim=True)[0]
-            sigma_i = self.layer_sigma1(sigma_i)
-            sigma_i = self.layer_sigma2(self.activation(sigma_i))
-            sigma_multi.append(sigma_i)
-        
-        sigma_multi = torch.stack(sigma_multi, dim=1)
+        # Decode sigma.
+        sigma = torch.max(byte, dim=1, keepdim=True)[0]
+        sigma = self.layer_sigma1(sigma)
+        sigma = self.layer_sigma2(self.activation(sigma))
 
         # Decode color.
         view_dir = self.linear_color_query(view_dir)
@@ -119,7 +125,7 @@ class RadianceTransformer3(nn.Module):
         color = self.layer_color1(color)
         color = self.layer_color2(self.activation(color))
     
-        return color, sigma_multi
+        return color, sigma
     @classmethod
     def from_conf(cls, conf, d_input, d_code, d_view):
         return cls(
@@ -315,6 +321,7 @@ class MultiHeadAttentionLayer(nn.Module):
         self.n_head = n_head
         self.aggregate = aggregate
 
+        self.temperature = math.sqrt(n_dim)
         self.query_fc_layer = nn.Linear(d_query, n_dim*n_head)
         self.key_fc_layer = nn.Linear(d_key, n_dim*n_head)
         self.value_fc_layer = nn.Linear(d_value, n_dim*n_head)
@@ -348,9 +355,8 @@ class MultiHeadAttentionLayer(nn.Module):
         return out
 
     def calculate_attention(self, query, key, value):
-        n_dim_key = key.size(-1)
         attention_score = torch.matmul(query, key.transpose(-2, -1))  # Q x K.T
-        attention_score = attention_score / math.sqrt(n_dim_key)
+        attention_score = attention_score / self.temperature
 
         attention_prob = F.softmax(attention_score, dim=-1)  # (B, N_ref, N_src)
         out = torch.matmul(attention_prob, value)  # (B, N_ref, D)

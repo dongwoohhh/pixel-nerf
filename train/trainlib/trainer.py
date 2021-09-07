@@ -215,7 +215,7 @@ class Trainer:
                             test_data = next(test_data_iter)
                         self.net.eval()
                         with torch.no_grad():
-                            vis, vis2, vis_vals = self.vis_step(
+                            vis, vis_vals = self.vis_step(
                                 test_data, global_step=step_id
                             )
                         if vis_vals is not None:
@@ -227,7 +227,6 @@ class Trainer:
                             import imageio
 
                             vis_u8 = (vis * 255).astype(np.uint8)
-                            vis2_u8 = (vis2 * 255).astype(np.uint8)
                             imageio.imwrite(
                                 os.path.join(
                                     self.visual_path,
@@ -235,14 +234,7 @@ class Trainer:
                                 ),
                                 vis_u8,
                             )
-                            imageio.imwrite(
-                                os.path.join(
-                                    self.visual_path,
-                                    "{:04}_{:04}_vis2.png".format(epoch, batch),
-                                ),
-                                vis2_u8,
-                            )
-
+                            
                     if (
                         batch == self.num_total_batches - 1
                         or batch % self.accu_grad == self.accu_grad - 1

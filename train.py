@@ -220,7 +220,6 @@ class PixelNeRFTrainer(trainlib.Trainer):
             all_index_target.append(index_target)
 
         all_rgb_gt = torch.stack(all_rgb_gt)  # (SB, ray_batch_size, 3)
-        all_rgb_gt_multi = all_rgb_gt.unsqueeze(-2).repeat(1, 1, net.n_iteration, 1)
         all_rays = torch.stack(all_rays)  # (SB, ray_batch_size, 8)
         all_index_target = torch.stack(all_index_target)
 
@@ -357,16 +356,10 @@ class PixelNeRFTrainer(trainlib.Trainer):
             rgb_coarse_np = coarse.rgb[0].cpu().numpy().reshape(H, W, 3)
             depth_coarse_np = coarse.depth[0].cpu().numpy().reshape(H, W)
 
-            rgb_coarse_multi_np = coarse.rgb_multi[0].cpu().numpy().reshape(H, W, net.n_iteration, 3)
-            rgb_coarse_multi_np = rgb_coarse_multi_np.transpose(0, 2, 1, 3).reshape(H, W*net.n_iteration, 3)
-
             if using_fine:
                 alpha_fine_np = fine.weights[0].sum(dim=1).cpu().numpy().reshape(H, W)
                 depth_fine_np = fine.depth[0].cpu().numpy().reshape(H, W)
                 rgb_fine_np = fine.rgb[0].cpu().numpy().reshape(H, W, 3)
-
-                rgb_fine_multi_np = fine.rgb_multi[0].cpu().numpy().reshape(H, W, net.n_iteration, 3)
-                rgb_fine_multi_np = rgb_fine_multi_np.transpose(0, 2, 1, 3).reshape(H, W*net.n_iteration, 3)
 
         print("c rgb min {} max {}".format(rgb_coarse_np.min(), rgb_coarse_np.max()))
         print(
@@ -410,19 +403,14 @@ class PixelNeRFTrainer(trainlib.Trainer):
         else:
             rgb_psnr = rgb_coarse_np
 
-        vis2 = np.vstack([np.hstack([rgb_coarse_multi_np, gt]), np.hstack([rgb_fine_multi_np, gt])])
-
         psnr = util.psnr(rgb_psnr, gt)
         vals = {"psnr": psnr}
         print("psnr", psnr)
 
-        #cam_rays = images = index_dest = poses = render_dict = coarse = fine = None
-        #test_rays = test_poses = test_images = None
-
         # set the renderer network back to train mode
         torch.cuda.empty_cache()
         renderer.train()
-        return vis, vis2, vals
+        return vis, vals
 
 
 trainer = PixelNeRFTrainer()

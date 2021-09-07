@@ -242,14 +242,14 @@ class PixelNeRFNet(torch.nn.Module):
                 transformer_output_rgb, transformer_output_sigma = self.transformer_fine(input=transformer_input, view_dir=viewdirs_tgt)
             
             rgb = transformer_output_rgb[:, 0].reshape(SB, B, 3)
-            sigma_multi = transformer_output_sigma.reshape(SB, B, self.n_iteration, 1)
+            sigma = transformer_output_sigma.reshape(SB, B, 1)
             
             rgb = torch.sigmoid(rgb)
-            sigma_multi = torch.relu(sigma_multi)
+            sigma = torch.relu(sigma)
 
             transformer_input = transformer_input.reshape(SB, B, NS, -1)
 
-        return rgb, sigma_multi, transformer_input
+        return rgb, sigma, transformer_input
 
     def forward_ref(self, xyz, viewdirs, index_batch, transformer_key, coarse):
         B = viewdirs.shape[0]
