@@ -246,8 +246,6 @@ class Trainer:
                     step_id += 1
                     batch += 1
                     progress.update(1)
-                if self.args.max_step < step_id:
-                    break
             epoch +=1
             if self.lr_scheduler is not None:
                 self.lr_scheduler.step()

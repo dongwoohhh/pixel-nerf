@@ -75,6 +75,13 @@ def parse_args(
         default="visuals",
         help="visualization output directory",
     )
+    parser.add_argument(
+        "--view_type",
+        type=str,
+        default='pixel-nerf',
+        help="View selection type, pixel-nerf | MVSNeRF | nearest"
+
+    )
     if callback is not None:
         parser = callback(parser)
     args = parser.parse_args()

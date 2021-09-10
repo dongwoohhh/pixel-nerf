@@ -60,12 +60,6 @@ def extra_args(parser):
         help="Use color ref loss",
     )
     parser.add_argument(
-        "--max_step",
-        type=int,
-        default=400000,
-        help="Maximum training step",
-    )
-    parser.add_argument(
         "--no_save_model_step",
         type=int,
         default=200000,
@@ -184,36 +178,24 @@ class PixelNeRFTrainer(trainlib.Trainer):
             c = None
             if "c" in data:
                 c = data["c"][obj_idx]
-            if curr_nviews > 1:
-                # Somewhat inefficient, don't know better way
-                image_ord[obj_idx] = torch.from_numpy(
-                    np.random.choice(NV, curr_nviews, replace=False)
-                )
-            images_0to1 = images * 0.5 + 0.5
 
-            cam_rays = util.gen_rays(
-                poses, W, H, focal, self.z_near, self.z_far, c=c
-            )  # (NV, H, W, 8)
+            source_id, rays, pix_inds = util.ray_sampling(
+                NV, curr_nviews, args.ray_batch_size, H, W, poses, focal, c, 
+                self.z_near, self.z_far, args.view_type)
+
+            image_ord[obj_idx] = source_id
+            rays = rays.to(device=device)
+
+            index_target = torch.arange(0, NV).reshape(NV, 1, 1).repeat(1, H, W)
+            index_target = index_target.contiguous().reshape(-1)
+            index_target = index_target[pix_inds].to(device=device)  # (ray_batch_size, 1)
+
+            images_0to1 = images * 0.5 + 0.5
             rgb_gt_all = images_0to1
             rgb_gt_all = (
                 rgb_gt_all.permute(0, 2, 3, 1).contiguous().reshape(-1, 3)
             )  # (NV, H, W, 3)
-
-            if all_bboxes is not None:
-                pix = util.bbox_sample(bboxes, args.ray_batch_size)
-                pix_inds = pix[..., 0] * H * W + pix[..., 1] * W + pix[..., 2]
-            else:
-                pix_inds = torch.randint(0, NV * H * W, (args.ray_batch_size,))
-            
-            idx_val = torch.stack([pix_inds//(H*W), pix_inds%(H*W)//(W), pix_inds%W]).T
-
             rgb_gt = rgb_gt_all[pix_inds]  # (ray_batch_size, 3)
-            rays = cam_rays.view(-1, cam_rays.shape[-1])[pix_inds].to(
-                device=device
-            )  # (ray_batch_size, 8)
-            index_target = torch.arange(0, NV).reshape(NV, 1, 1).repeat(1, H, W)
-            index_target = index_target.contiguous().reshape(-1)
-            index_target = index_target[pix_inds].to(device=device)  # (ray_batch_size, 1)
 
             all_rgb_gt.append(rgb_gt)
             all_rays.append(rays)

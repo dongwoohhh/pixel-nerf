@@ -536,3 +536,32 @@ def get_module(net):
         return net.module
     else:
         return net
+
+
+def ray_sampling(NV, curr_nviews, ray_batch_size, H, W, poses, focal, c, z_near, z_far, view_type):
+    if view_type == "MVSNeRF":
+        source_id = torch.from_numpy(np.random.choice(np.arange(1, NV), curr_nviews, replace=False))
+        target_id = torch.tensor([0])
+        n_targets = 1
+    elif view_type == "pixel-nerf":
+        ord = torch.from_numpy(np.random.permutation(NV))
+        source_id = ord[:curr_nviews]
+        target_id = ord[curr_nviews:].sort()[0]
+        n_targets = NV - curr_nviews
+
+    cam_rays = gen_rays(
+        poses, W, H, focal, z_near, z_far, c=c)
+    
+    pix_inds = torch.arange(NV * H * W).reshape(NV, H, W)
+    pix_inds = pix_inds[target_id]
+    pix_inds = pix_inds.reshape(-1)
+    
+    idx_rand = torch.randint(0, n_targets * H * W, (ray_batch_size,))
+    pix_inds = pix_inds[idx_rand]
+
+    rays = cam_rays.view(-1, cam_rays.shape[-1])[pix_inds] # (ray_batch_size, 8)
+
+    return source_id, rays, pix_inds
+
+    
+
