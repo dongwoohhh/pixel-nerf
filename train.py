@@ -80,6 +80,7 @@ args, conf = util.args.parse_args(extra_args, training=True, default_ray_batch_s
 device = util.get_cuda(args.gpu_id[0])
 
 dset, val_dset, _ = get_split_dataset(args.dataset_format, args.datadir, args.split_name, pointcloud=True)
+
 print(
     "dset z_near {}, z_far {}, lindisp {}".format(dset.z_near, dset.z_far, dset.lindisp)
 )
@@ -150,8 +151,9 @@ class PixelNeRFTrainer(trainlib.Trainer):
         all_bboxes = data.get("bbox")  # (SB, NV, 4)  cmin rmin cmax rmax
         all_focals = data["focal"]  # (SB)
         all_c = data.get("c")  # (SB)
-        all_points = data.get("points").to(device=device)
-        all_pcd_mask = data.get("pcd_mask").to(device=device)
+        if args.use_color_ref:
+            all_points = data.get("points").to(device=device)
+            all_pcd_mask = data.get("pcd_mask").to(device=device)
 
         if self.use_bbox and global_step >= args.no_bbox_step:
             self.use_bbox = False
@@ -190,8 +192,7 @@ class PixelNeRFTrainer(trainlib.Trainer):
             index_target = index_target.contiguous().reshape(-1)
             index_target = index_target[pix_inds].to(device=device)  # (ray_batch_size, 1)
 
-            images_0to1 = images * 0.5 + 0.5
-            rgb_gt_all = images_0to1
+            rgb_gt_all = images
             rgb_gt_all = (
                 rgb_gt_all.permute(0, 2, 3, 1).contiguous().reshape(-1, 3)
             )  # (NV, H, W, 3)
@@ -232,20 +233,21 @@ class PixelNeRFTrainer(trainlib.Trainer):
         rgb_loss = self.rgb_coarse_crit(coarse.rgb, all_rgb_gt)
         loss_dict["rc"] = rgb_loss.item() * self.lambda_coarse
 
-        all_images_0to1 = all_images * 0.5 + 0.5
-        rgb_ref_loss = self.rgb_ref_crit(coarse.rgb_ref, coarse.uv_ref, coarse.points_ref, all_images_0to1, all_points, all_pcd_mask)
-        loss_dict["rc_ref"] = rgb_ref_loss.item() * self.lambda_coarse  
-
         if using_fine:
             fine_loss = self.rgb_fine_crit(fine.rgb, all_rgb_gt)
             rgb_loss = rgb_loss * self.lambda_coarse + fine_loss * self.lambda_fine
             loss_dict["rf"] = fine_loss.item() * self.lambda_fine
 
-            fine_ref_loss = self.rgb_ref_crit(fine.rgb_ref, fine.uv_ref, fine.points_ref, all_images_0to1, all_points, all_pcd_mask)
-            rgb_ref_loss = rgb_ref_loss * self.lambda_coarse + fine_ref_loss * self.lambda_fine
-            loss_dict["rf_ref"] = fine_ref_loss.item() * self.lambda_fine          
 
         if args.use_color_ref:
+            rgb_ref_loss = self.rgb_ref_crit(coarse.rgb_ref, coarse.uv_ref, coarse.points_ref, all_images, all_points, all_pcd_mask)
+            fine_ref_loss = self.rgb_ref_crit(fine.rgb_ref, fine.uv_ref, fine.points_ref, all_images, all_points, all_pcd_mask)
+
+            loss_dict["rc_ref"] = rgb_ref_loss.item() * self.lambda_coarse
+            loss_dict["rf_ref"] = fine_ref_loss.item() * self.lambda_fine
+
+            rgb_ref_loss = rgb_ref_loss * self.lambda_coarse + fine_ref_loss * self.lambda_fine
+
             loss = rgb_loss + rgb_ref_loss
         else:
             loss = rgb_loss
@@ -285,7 +287,6 @@ class PixelNeRFTrainer(trainlib.Trainer):
         cam_rays = util.gen_rays(
             poses, W, H, focal, self.z_near, self.z_far, c=c
         )  # (NV, H, W, 8)
-        images_0to1 = images * 0.5 + 0.5  # (NV, 3, H, W)
 
         
         curr_nviews = nviews[torch.randint(0, len(nviews), (1,)).item()]
@@ -303,14 +304,14 @@ class PixelNeRFTrainer(trainlib.Trainer):
         # set renderer net to eval mode
         renderer.eval()
         source_views = (
-            images_0to1[views_src]
+            images[views_src]
             .permute(0, 2, 3, 1)
             .cpu()
             .numpy()
             .reshape(-1, H, W, 3)
         )
 
-        gt = images_0to1[view_dest].permute(1, 2, 0).cpu().numpy().reshape(H, W, 3)
+        gt = images[view_dest].permute(1, 2, 0).cpu().numpy().reshape(H, W, 3)
         with torch.no_grad():
             test_rays = cam_rays[view_dest]  # (H, W, 8)
             test_images = images[views_src]  # (NS, 3, H, W)

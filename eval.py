@@ -329,8 +329,7 @@ with torch.no_grad():
         curr_ssim = 0.0
         curr_psnr = 0.0
         if not args.no_compare_gt:
-            images_0to1 = images * 0.5 + 0.5  # (NV, 3, H, W)
-            images_gt = images_0to1[target_view_mask]
+            images_gt = images[target_view_mask]
             rgb_gt_all = (
                 images_gt.permute(0, 2, 3, 1).contiguous().numpy()
             )  # (NV-NS, H, W, 3)

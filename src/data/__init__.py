@@ -3,6 +3,7 @@ import os
 from .MultiObjectDataset import MultiObjectDataset
 from .DVRDataset import DVRDataset
 from .SRNDataset import SRNDataset
+from .MVSNeRFDataset import MVSDatasetDTU
 
 from .data_util import ColorJitterDataset
 
@@ -33,10 +34,7 @@ def get_split_dataset(dataset_type, datadir, split_name, want_split="all", train
             flags["list_prefix"] = "gen_"
         elif dataset_type == "dvr_dtu":
             # DTU dataset
-            #flags["list_prefix"] = "new_overfit_"
             flags["list_prefix"] = split_name+'_'
-            #flags["list_prefix"] = "new_all_"
-            #flags["list_prefix"] = "SRF_"
             if training:
                 flags["max_imgs"] = 49
             flags["sub_format"] = "dtu"
@@ -48,6 +46,9 @@ def get_split_dataset(dataset_type, datadir, split_name, want_split="all", train
             # Apply color jitter during train
             train_aug = ColorJitterDataset
             train_aug_flags = {"extra_inherit_attrs": ["sub_format"]}
+    elif dataset_type == "mvsnerf_dtu":
+        dset_class = MVSDatasetDTU
+
     else:
         raise NotImplementedError("Unsupported dataset type", dataset_type)
 

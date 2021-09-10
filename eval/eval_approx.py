@@ -104,7 +104,7 @@ with torch.no_grad():
         poses = data["poses"]  # (SB, NV, 4, 4)
         focal = data["focal"][0]
 
-        images_0to1 = images * 0.5 + 0.5  # (B, 3, H, W)
+        #images_0to1 = images * 0.5 + 0.5  # (B, 3, H, W)
 
         SB, NV, _, H, W = images.shape
 
@@ -134,7 +134,7 @@ with torch.no_grad():
         rgb_fine, _depth = render_par(all_rays.to(device=device))
         _depth = None
         rgb_fine = rgb_fine.reshape(SB, H, W, 3).cpu().numpy()
-        images_gt = util.batched_index_select_nd(images_0to1, dest_view).reshape(
+        images_gt = util.batched_index_select_nd(images, dest_view).reshape(
             SB, 3, H, W
         )
         rgb_gt_all = images_gt.permute(0, 2, 3, 1).contiguous().numpy()

@@ -287,6 +287,7 @@ class DVRDataset(torch.utils.data.Dataset):
 
                 # Get color of points from multi-view images.
                 #focal[..., 1] *= -1.0
+                #all_poses -> cam2world
 
                 rot = all_poses[:, :3, :3].transpose(2, 1)
                 trans = - torch.matmul(rot, all_poses[:, :3, 3:])
@@ -397,7 +398,8 @@ class DVRDataset(torch.utils.data.Dataset):
             image_w[xy[:, 1], xy[:, 0], :] = colors_i * 255
             cv2.imwrite('debug_pcd/warped_{}.png'.format(i), cv2.cvtColor(image_w, cv2.COLOR_RGB2BGR))
         """
-        
+        all_imgs = all_imgs * 0.5 + 0.5
+
         result = {
             "path": root_dir,
             "img_id": index,
