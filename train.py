@@ -270,6 +270,7 @@ class PixelNeRFTrainer(trainlib.Trainer):
         return losses
 
     def vis_step(self, data, global_step, idx=None):
+        torch.cuda.empty_cache()
         if "images" not in data:
             return {}
         if idx is None:
@@ -295,11 +296,15 @@ class PixelNeRFTrainer(trainlib.Trainer):
             views_src = np.sort(np.random.choice(NV, curr_nviews, replace=False))
         else:
             views_src = np.array(sorted(list(map(int, args.vis_source.split()))))
-        view_dest = np.random.randint(0, NV - curr_nviews)
-
-        for vs in range(curr_nviews):
-            view_dest += view_dest >= views_src[vs]
-        views_src = torch.from_numpy(views_src)
+        
+        if args.view_type == "MVSNeRF":
+            view_dest = 0
+            views_src = torch.arange(1,  curr_nviews+1)
+        else:
+            view_dest = np.random.randint(0, NV - curr_nviews)
+            for vs in range(curr_nviews):
+                view_dest += view_dest >= views_src[vs]
+            views_src = torch.from_numpy(views_src)
 
         # set renderer net to eval mode
         renderer.eval()
