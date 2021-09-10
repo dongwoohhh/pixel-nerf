@@ -8,7 +8,8 @@ import torchvision
 import util
 from model.custom_encoder import ConvEncoder
 import torch.autograd.profiler as profiler
-
+from .layers import *
+from collections import OrderedDict
 
 class SpatialEncoder(nn.Module):
     """
@@ -70,7 +71,29 @@ class SpatialEncoder(nn.Module):
             self.latent_size = [0, 64, 128, 256, 512, 1024][num_layers]
 
         if self.color_concat:
-            self.latent_size += 3
+            self.latent_size = 32 + 3
+
+        # Decoder params.
+        self.use_skips = True
+        self.num_output_channels = 1
+        self.upsample_mode = 'nearest'
+        self.num_ch_enc = [64, 64, 128, 256, 512]
+        self.num_ch_dec = [32, 32, 64, 128, 256]
+
+        # Init. decoder.
+        self.convs_decoder = OrderedDict()
+        for i in range(num_layers-1, -1, -1): # Note that pixenl nerf encoder doens't use the last ResNetBlock.
+            num_ch_in = self.num_ch_enc[-1] if i == 4 else self.num_ch_dec[i + 1]
+            num_ch_out = self.num_ch_dec[i]
+            self.convs_decoder[("upconv", i, 0)] = ConvBlock(num_ch_in, num_ch_out)
+            # upconv_1
+            num_ch_in = self.num_ch_dec[i]
+            if self.use_skips and i > 0:
+                num_ch_in += self.num_ch_enc[i - 1]
+            num_ch_out = self.num_ch_dec[i]
+            self.convs_decoder[("upconv", i, 1)] = ConvBlock(num_ch_in, num_ch_out)
+
+        self.decoder = nn.ModuleList(list(self.convs_decoder.values()))
 
         self.num_layers = num_layers
         self.index_interp = index_interp
@@ -156,24 +179,27 @@ class SpatialEncoder(nn.Module):
 
             self.latents = latents
             align_corners = None if self.index_interp == "nearest " else True
-            latent_sz = latents[0].shape[-2:]
-            for i in range(len(latents)):
-                latents[i] = F.interpolate(
-                    latents[i],
-                    latent_sz,
-                    mode=self.upsample_interp,
-                    align_corners=align_corners,
-                )
-            self.latent = torch.cat(latents, dim=1)
 
+            # decoder.
+            x = latents[-1]
+            for i in range(self.num_layers-1, -1, -1):
+                x = self.convs_decoder[("upconv", i, 0)](x)
+                if i>0:
+                    x = [F.interpolate(
+                            x,
+                            latents[i-1].shape[-2:],
+                            mode=self.upsample_interp,
+                            align_corners=align_corners,)]
+                else:
+                    x = [upsample(x)]
+                if self.use_skips and i > 0:
+                    x += [latents[i-1]]
+                x = torch.cat(x, dim=1)
+                x = self.convs_decoder[("upconv", i, 1)](x)
+            self.latent = x
+         
         if self.color_concat:
-            color = F.interpolate(
-                x_init,
-                latent_sz,
-                mode=self.upsample_interp,
-                align_corners=align_corners,
-            )
-            self.latent = torch.cat([self.latent, color], dim=1)
+            self.latent = torch.cat([self.latent, x_init], dim=1)
 
         self.latent_scaling[0] = self.latent.shape[-1]
         self.latent_scaling[1] = self.latent.shape[-2]
