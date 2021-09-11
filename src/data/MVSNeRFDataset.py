@@ -136,18 +136,18 @@ class MVSDatasetDTU(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         sample = {}
         scan, light_idx, target_view, src_views = self.metas[idx]
+
         if self.split=='train':
             ids = torch.randperm(5)[:3]
-            view_ids = [src_views[i] for i in ids] + [target_view]
+            view_ids = [target_view] + [src_views[i] for i in ids]
         else:
-            view_ids = [src_views[i] for i in range(3)] + [target_view]
+            view_ids = [target_view] + [src_views[i] for i in range(3)]
 
-
+        
         affine_mat, affine_mat_inv = [], []
         imgs, depths_h = [], []
         proj_mats, intrinsics, w2cs, c2ws, near_fars = [], [], [], [], []  # record proj mats between views
         for i, vid in enumerate(view_ids):
-
             # NOTE that the id in image file names is from 1 to 49 (not 0~48)
             img_filename = os.path.join(self.root_dir,
                                         f'Rectified/{scan}_train/rect_{vid + 1:03d}_{light_idx}_r5000.png')
